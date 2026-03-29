@@ -28,7 +28,7 @@ def get_default_sandbox_specs():
                 'OH_ENABLE_VS_CODE': '0',
                 **get_agent_server_env(),
             },
-            working_dir='',
+            working_dir='/workspace/project',
         )
     ]
 

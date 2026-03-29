@@ -1,10 +1,18 @@
 import asyncio
+import logging
+import sys
 import time
 from abc import ABC, abstractmethod
 
 import httpx
 
 from openhands.app_server.errors import SandboxError
+
+_logger = logging.getLogger(__name__)
+
+# Disable output buffering
+sys.stdout.reconfigure(line_buffering=True)
+sys.stderr.reconfigure(line_buffering=True)
 from openhands.app_server.sandbox.sandbox_models import (
     AGENT_SERVER,
     SandboxInfo,
@@ -99,7 +107,11 @@ class SandboxService(ABC):
             SandboxError: If sandbox not found, enters ERROR state, or times out
         """
         start = time.time()
+        loop_count = 0
         while time.time() - start <= timeout:
+            loop_count += 1
+            print(f'[DEBUG] Loop iteration {loop_count}, elapsed: {time.time() - start:.1f}s')
+            sys.stdout.flush()
             sandbox = await self.get_sandbox(sandbox_id)
             if sandbox is None:
                 raise SandboxError(f'Sandbox not found: {sandbox_id}')
@@ -107,12 +119,61 @@ class SandboxService(ABC):
             if sandbox.status == SandboxStatus.ERROR:
                 raise SandboxError(f'Sandbox entered error state: {sandbox_id}')
 
+            print(f'[DEBUG] Sandbox {sandbox.id} status: {sandbox.status}')
             if sandbox.status == SandboxStatus.RUNNING:
+                print(f'[DEBUG] Sandbox is RUNNING, exposed_urls: {sandbox.exposed_urls}')
                 # Optionally verify agent server is alive to avoid race conditions
                 # where sandbox reports RUNNING but agent server isn't ready yet
-                if httpx_client and sandbox.exposed_urls:
-                    if await self._check_agent_server_alive(sandbox, httpx_client):
-                        return sandbox
+                if httpx_client:
+                    if sandbox.exposed_urls:
+                        # We have exposed_urls, verify agent server is alive
+                        if await self._check_agent_server_alive(sandbox, httpx_client):
+                            return sandbox
+                    else:
+                        # No exposed_urls yet, try to construct URL and check directly
+                        # This handles the case where the health check in _process_to_sandbox_info
+                        # hasn't succeeded yet but the agent server might be ready now
+                        try:
+                            # Try to get the port from the process registry
+                            from openhands.app_server.sandbox.process_sandbox_service import _processes
+                            from openhands.app_server.sandbox.sandbox_models import ExposedUrl, AGENT_SERVER
+                            
+                            print(f'[DEBUG] Looking for process data for sandbox {sandbox.id} in _processes (size={len(_processes)})')
+                            for pid, info in _processes.items():
+                                print(f'[DEBUG]   _processes[{pid}]: port={info.port}')
+                            
+                            process_data = _processes.get(sandbox.id)
+                            if process_data:
+                                url = f'http://localhost:{process_data.port}/alive'
+                                print(f'[DEBUG] Checking agent server at {url}')
+                                response = await httpx_client.get(url, timeout=5.0)
+                                print(f'[DEBUG] Agent server response: {response.status_code}')
+                                if response.status_code == 200:
+                                    # Create a new SandboxInfo with exposed_urls set
+                                    from openhands.app_server.sandbox.sandbox_models import SandboxInfo
+                                    return SandboxInfo(
+                                        id=sandbox.id,
+                                        created_by_user_id=sandbox.created_by_user_id,
+                                        sandbox_spec_id=sandbox.sandbox_spec_id,
+                                        status=sandbox.status,
+                                        session_api_key=sandbox.session_api_key,
+                                        exposed_urls=[
+                                            ExposedUrl(
+                                                name=AGENT_SERVER,
+                                                url=f'http://localhost:{process_data.port}',
+                                                port=process_data.port,
+                                            ),
+                                        ],
+                                        created_at=sandbox.created_at,
+                                    )
+                            else:
+                                print(f'[WARNING] Process data not found for sandbox {sandbox.id}')
+                        except Exception as e:
+                            # Health check failed, continue polling
+                            print(f'[ERROR] Health check failed for sandbox {sandbox.id}: {e}')
+                            import traceback
+                            traceback.print_exc()
+                            pass
                     # Agent server not ready yet, continue polling
                 else:
                     return sandbox

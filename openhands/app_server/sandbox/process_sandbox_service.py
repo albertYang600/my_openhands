@@ -118,7 +118,7 @@ class ProcessSandboxService(SandboxService):
         # Prepare environment variables
         env = os.environ.copy()
         env.update(sandbox_spec.initial_env)
-        env['SESSION_API_KEY'] = session_api_key
+        env['OH_SESSION_API_KEYS_0'] = session_api_key
 
         # Prepare command arguments
         cmd = [
@@ -156,7 +156,7 @@ class ProcessSandboxService(SandboxService):
         except Exception as e:
             raise SandboxError(f'Failed to start agent process: {e}')
 
-    async def _wait_for_server_ready(self, port: int, timeout: int = 30) -> bool:
+    async def _wait_for_server_ready(self, port: int, timeout: int = 120) -> bool:
         """Wait for the agent server to be ready."""
         start_time = time.time()
         while time.time() - start_time < timeout:
@@ -178,17 +178,19 @@ class ProcessSandboxService(SandboxService):
         """Get the status of a process."""
         try:
             process = psutil.Process(process_info.pid)
-            if process.is_running():
-                status = process.status()
-                if status == psutil.STATUS_RUNNING:
-                    return SandboxStatus.RUNNING
-                elif status == psutil.STATUS_STOPPED:
-                    return SandboxStatus.PAUSED
-                else:
-                    return SandboxStatus.STARTING
+            is_running = process.is_running()
+            _logger.info(f'[DEBUG] Checking process {process_info.pid}: is_running={is_running}')
+            if is_running:
+                # Any running status means the process is RUNNING
+                # STATUS_SLEEPING is the normal state for most processes
+                # STATUS_RUNNING only means currently on CPU
+                _logger.info(f'[DEBUG] Process {process_info.pid} is RUNNING')
+                return SandboxStatus.RUNNING
             else:
+                _logger.info(f'[DEBUG] Process {process_info.pid} is MISSING')
                 return SandboxStatus.MISSING
-        except (psutil.NoSuchProcess, psutil.AccessDenied):
+        except (psutil.NoSuchProcess, psutil.AccessDenied) as e:
+            _logger.info(f'[DEBUG] Process {process_info.pid} exception: {e}')
             return SandboxStatus.MISSING
 
     async def _process_to_sandbox_info(
@@ -196,17 +198,22 @@ class ProcessSandboxService(SandboxService):
     ) -> SandboxInfo:
         """Convert process info to sandbox info."""
         status = self._get_process_status(process_info)
+        _logger.info(f'[DEBUG] Sandbox {sandbox_id} initial status: {status}')
 
         exposed_urls = None
         session_api_key = None
 
         if status == SandboxStatus.RUNNING:
             # Check if server is actually responding
+            # Note: This check can fail temporarily during initialization,
+            # so we don't change status to ERROR, just leave exposed_urls as None
             try:
                 url = replace_localhost_hostname_for_docker(
                     f'http://localhost:{process_info.port}{self.health_check_path}'
                 )
+                _logger.info(f'[DEBUG] Checking health at {url}')
                 response = await self.httpx_client.get(url, timeout=5.0)
+                _logger.info(f'[DEBUG] Health check response status: {response.status_code}')
                 if response.status_code == 200:
                     exposed_urls = [
                         ExposedUrl(
@@ -216,12 +223,12 @@ class ProcessSandboxService(SandboxService):
                         ),
                     ]
                     session_api_key = process_info.session_api_key
-                else:
-                    status = SandboxStatus.ERROR
-            except Exception:
-                status = SandboxStatus.ERROR
+            except Exception as e:
+                # Health check failed - this could be temporary, so don't change status
+                _logger.info(f'[DEBUG] Health check failed: {e}')
+                pass
 
-        return SandboxInfo(
+        result = SandboxInfo(
             id=sandbox_id,
             created_by_user_id=process_info.user_id,
             sandbox_spec_id=process_info.sandbox_spec_id,
@@ -230,6 +237,8 @@ class ProcessSandboxService(SandboxService):
             exposed_urls=exposed_urls,
             created_at=process_info.created_at,
         )
+        _logger.info(f'[DEBUG] Sandbox {sandbox_id} final status: {result.status}')
+        return result
 
     async def search_sandboxes(
         self,

@@ -64,6 +64,7 @@ export const useCreateConversation = () => {
           undefined, // trigger - will be set by backend
           parentConversationId,
           agentType,
+          settings?.llm_model,
         );
 
         // Return a special task ID that the frontend will recognize

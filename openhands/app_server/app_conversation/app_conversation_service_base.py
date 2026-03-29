@@ -277,11 +277,13 @@ class AppConversationServiceBase(AppConversationService, ABC):
     ):
         request = task.request
 
-        # Create the projects directory if it does not exist yet
+        _logger.info(f'[DEBUG] workspace.working_dir: {repr(workspace.working_dir)}')
+        _logger.info(f'[DEBUG] workspace.host: {workspace.host}')
+
+        # Create the workspace directory if it does not exist yet
         parent = Path(workspace.working_dir).parent
-        result = await workspace.execute_command(
-            f'mkdir {workspace.working_dir}', parent
-        )
+        mkdir_cmd = f'mkdir -p {workspace.working_dir}'
+        result = await workspace.execute_command(mkdir_cmd, workspace.working_dir)
         if result.exit_code:
             _logger.warning(f'mkdir failed: {result.stderr}')
 
@@ -339,7 +341,9 @@ class AppConversationServiceBase(AppConversationService, ABC):
         setup_script = workspace.working_dir + '/.openhands/setup.sh'
 
         await workspace.execute_command(
-            f'chmod +x {setup_script} && source {setup_script}', timeout=600
+            f'chmod +x {setup_script} && source {setup_script}',
+            workspace.working_dir,
+            timeout=600
         )
 
         # TODO: Does this need to be done?
@@ -385,7 +389,9 @@ class AppConversationServiceBase(AppConversationService, ABC):
         )
 
         # Make the pre-commit hook executable
-        result = await workspace.execute_command(f'chmod +x {PRE_COMMIT_HOOK}')
+        result = await workspace.execute_command(
+            f'chmod +x {PRE_COMMIT_HOOK}', workspace.working_dir
+        )
         if result.exit_code:
             _logger.error(f'Failed to make pre-commit hook executable: {result.stderr}')
             return

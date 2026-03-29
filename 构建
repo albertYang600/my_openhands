@@ -1,0 +1,8 @@
+albert@albert-BATTLE-AX-B760M-GHA-WIFI:~/桌面/代码/OpenHands$ cd /home/albert/桌面/代码/OpenHands
+make build
+
+
+albert@albert-BATTLE-AX-B760M-GHA-WIFI:~/桌面/代码/OpenHands$ cd /home/albert/桌面/代码/OpenHands
+export RUNTIME=local
+export INSTALL_DOCKER=0
+make run FRONTEND_PORT=12000 FRONTEND_HOST=0.0.0.0 BACKEND_HOST=0.0.0.0
