@@ -105,6 +105,57 @@ class ProcessSandboxService(SandboxService):
         os.makedirs(sandbox_dir, exist_ok=True)
         return sandbox_dir
 
+    # async def _start_agent_process(
+    #     self,
+    #     sandbox_id: str,
+    #     port: int,
+    #     working_dir: str,
+    #     session_api_key: str,
+    #     sandbox_spec: SandboxSpecInfo,
+    # ) -> subprocess.Popen:
+    #     """Start the agent server process."""
+
+    #     # Prepare environment variables
+    #     env = os.environ.copy()
+    #     env.update(sandbox_spec.initial_env)
+    #     env['OH_SESSION_API_KEYS_0'] = session_api_key
+
+    #     # Prepare command arguments
+    #     cmd = [
+    #         self.python_executable,
+    #         '-m',
+    #         self.agent_server_module,
+    #         '--port',
+    #         str(port),
+    #     ]
+
+    #     _logger.info(
+    #         f'Starting agent process for sandbox {sandbox_id}: {" ".join(cmd)}'
+    #     )
+
+    #     try:
+    #         # Start the process
+    #         process = subprocess.Popen(
+    #             cmd,
+    #             env=env,
+    #             cwd=working_dir,
+    #             stdout=subprocess.PIPE,
+    #             stderr=subprocess.PIPE,
+    #         )
+
+    #         # Wait a moment for the process to start
+    #         await asyncio.sleep(1)
+
+    #         # Check if process is still running
+    #         if process.poll() is not None:
+    #             stdout, stderr = process.communicate()
+    #             raise SandboxError(f'Agent process failed to start: {stderr.decode()}')
+
+    #         return process
+
+    #     except Exception as e:
+    #         raise SandboxError(f'Failed to start agent process: {e}')
+
     async def _start_agent_process(
         self,
         sandbox_id: str,
@@ -113,53 +164,109 @@ class ProcessSandboxService(SandboxService):
         session_api_key: str,
         sandbox_spec: SandboxSpecInfo,
     ) -> subprocess.Popen:
-        """Start the agent server process."""
+        """Start the agent server process with output redirection."""
 
         # Prepare environment variables
         env = os.environ.copy()
         env.update(sandbox_spec.initial_env)
-        env['OH_SESSION_API_KEYS_0'] = session_api_key
+        env['SESSION_API_KEY'] = session_api_key
+
+        # 设置日志级别为ERROR，减少输出
+        env['LOG_LEVEL'] = 'ERROR'
+        env['PYTHONUNBUFFERED'] = '1'
+
+        # 创建日志文件
+        log_file_path = os.path.join(working_dir, 'agent_server.log')
+        error_log_path = os.path.join(working_dir, 'agent_server_error.log')
+
+        _logger.info(f'Starting agent process for sandbox {sandbox_id}, logs: {log_file_path}')
 
         # Prepare command arguments
         cmd = [
-            self.python_executable,
-            '-m',
-            self.agent_server_module,
-            '--port',
-            str(port),
-        ]
+        self.python_executable,
+        '-m',
+        self.agent_server_module,
+        '--port',
+        str(port),
+    ]
 
-        _logger.info(
-            f'Starting agent process for sandbox {sandbox_id}: {" ".join(cmd)}'
-        )
+        # 添加可选参数来减少日志输出（如果agent_server支持）
+        # cmd.extend(['--log-level', 'ERROR'])
 
         try:
-            # Start the process
+            # 打开日志文件
+            stdout_file = open(log_file_path, 'wb')
+            stderr_file = open(error_log_path, 'wb')
+
+            # Start the process with redirected output
             process = subprocess.Popen(
                 cmd,
                 env=env,
                 cwd=working_dir,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
+                stdout=stdout_file,
+                stderr=stderr_file,
+                # 使用管道也可以，但文件更可靠
+                # stdout=subprocess.PIPE,
+                # stderr=subprocess.PIPE,
             )
 
+            # 保存文件引用以便后续关闭（但Popen会在进程结束时自动关闭）
+
             # Wait a moment for the process to start
-            await asyncio.sleep(1)
+            await asyncio.sleep(2)
 
             # Check if process is still running
             if process.poll() is not None:
-                stdout, stderr = process.communicate()
-                raise SandboxError(f'Agent process failed to start: {stderr.decode()}')
+                # 读取错误日志
+                try:
+                    with open(error_log_path, 'r') as f:
+                        error_output = f.read()
+                except:
+                    error_output = "Could not read error log"
 
+                raise SandboxError(
+                    f'Agent process failed to start.\n'
+                    f'Exit code: {process.returncode}\n'
+                    f'Error log: {error_output[:500]}'
+                )
+
+            _logger.info(f'Agent process for sandbox {sandbox_id} started successfully with PID {process.pid}')
             return process
 
         except Exception as e:
+            _logger.error(f'Failed to start agent process for sandbox {sandbox_id}: {e}')
             raise SandboxError(f'Failed to start agent process: {e}')
 
-    async def _wait_for_server_ready(self, port: int, timeout: int = 120) -> bool:
-        """Wait for the agent server to be ready."""
+
+
+    # async def _wait_for_server_ready(self, port: int, timeout: int = 120) -> bool:
+    #     """Wait for the agent server to be ready."""
+    #     start_time = time.time()
+    #     while time.time() - start_time < timeout:
+    #         try:
+    #             url = replace_localhost_hostname_for_docker(
+    #                 f'http://localhost:{port}/alive'
+    #             )
+    #             response = await self.httpx_client.get(url, timeout=5.0)
+    #             if response.status_code == 200:
+    #                 data = response.json()
+    #                 if data.get('status') == 'ok':
+    #                     return True
+    #         except Exception:
+    #             pass
+    #         await asyncio.sleep(1)
+    #     return False
+
+    async def _wait_for_server_ready(self, port: int, timeout: int = 60) -> bool:
+        """Wait for the agent server to be ready with better diagnostics."""
         start_time = time.time()
+        last_error = None
+        check_count = 0
+
+        _logger.info(f"Waiting for agent server on port {port} to be ready...")
+
         while time.time() - start_time < timeout:
+            check_count += 1
             try:
                 url = replace_localhost_hostname_for_docker(
                     f'http://localhost:{port}/alive'
@@ -168,11 +275,27 @@ class ProcessSandboxService(SandboxService):
                 if response.status_code == 200:
                     data = response.json()
                     if data.get('status') == 'ok':
+                        elapsed = time.time() - start_time
+                        _logger.info(f"Agent server on port {port} ready after {elapsed:.1f}s")
                         return True
-            except Exception:
-                pass
-            await asyncio.sleep(1)
+                    else:
+                        _logger.debug(f"Health check returned: {data}")
+                else:
+                    _logger.debug(f"Health check returned status {response.status_code}")
+            except Exception as e:
+                last_error = str(e)
+                _logger.debug(f"Health check attempt {check_count} failed: {e}")
+
+            # 指数退避，但最大等待2秒
+            wait_time = min(0.5 * (2 ** min(check_count, 4)), 2.0)
+            await asyncio.sleep(wait_time)
+
+        _logger.error(f"Agent server on port {port} failed to start within {timeout}s")
+        if last_error:
+            _logger.error(f"Last error: {last_error}")
+
         return False
+
 
     def _get_process_status(self, process_info: ProcessInfo) -> SandboxStatus:
         """Get the status of a process."""

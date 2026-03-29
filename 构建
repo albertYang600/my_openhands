@@ -6,3 +6,13 @@ albert@albert-BATTLE-AX-B760M-GHA-WIFI:~/桌面/代码/OpenHands$ cd /home/alber
 export RUNTIME=local
 export INSTALL_DOCKER=0
 make run FRONTEND_PORT=12000 FRONTEND_HOST=0.0.0.0 BACKEND_HOST=0.0.0.0
+
+
+# 创建workspace目录（如果不存在）
+sudo mkdir -p /workspace
+
+# 设置权限为777（临时解决）
+sudo chmod 777 /workspace
+
+# 或者设置给当前用户
+sudo chown $USER:$USER /workspace

@@ -9,6 +9,11 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any, AsyncGenerator, Sequence
 from uuid import UUID, uuid4
+# 在现有的导入后面添加
+from openhands.app_server.app_conversation.skill_filter import SkillFilter
+import time
+import uuid
+from datetime import datetime
 
 import httpx
 from fastapi import Request
@@ -190,62 +195,939 @@ class LiveStatusAppConversationService(AppConversationServiceBase):
             )
             yield task
 
+    # async def _start_app_conversation(
+    #     self, request: AppConversationStartRequest
+    # ) -> AsyncGenerator[AppConversationStartTask, None]:
+    #     # Create and yield the start task
+    #     user_id = await self.user_context.get_user_id()
+
+    #     # Validate and inherit from parent conversation if provided
+    #     if request.parent_conversation_id:
+    #         parent_info = (
+    #             await self.app_conversation_info_service.get_app_conversation_info(
+    #                 request.parent_conversation_id
+    #             )
+    #         )
+    #         if parent_info is None:
+    #             raise ValueError(
+    #                 f'Parent conversation not found: {request.parent_conversation_id}'
+    #             )
+    #         self._inherit_configuration_from_parent(request, parent_info)
+
+    #     task = AppConversationStartTask(
+    #         created_by_user_id=user_id,
+    #         request=request,
+    #     )
+    #     yield task
+
+    #     try:
+    #         async for updated_task in self._wait_for_sandbox_start(task):
+    #             yield updated_task
+
+    #         # Get the sandbox
+    #         sandbox_id = task.sandbox_id
+    #         assert sandbox_id is not None
+    #         sandbox = await self.sandbox_service.get_sandbox(sandbox_id)
+    #         assert sandbox is not None
+    #         agent_server_url = self._get_agent_server_url(sandbox)
+
+    #         # Get the working dir
+    #         sandbox_spec = await self.sandbox_spec_service.get_sandbox_spec(
+    #             sandbox.sandbox_spec_id
+    #         )
+    #         assert sandbox_spec is not None
+
+    #         # Run setup scripts
+    #         remote_workspace = AsyncRemoteWorkspace(
+    #             host=agent_server_url,
+    #             api_key=sandbox.session_api_key,
+    #             working_dir=sandbox_spec.working_dir,
+    #         )
+    #         async for updated_task in self.run_setup_scripts(
+    #             task, sandbox, remote_workspace, agent_server_url
+    #         ):
+    #             yield updated_task
+
+    #         # Build the start request
+    #         start_conversation_request = (
+    #             await self._build_start_conversation_request_for_user(
+    #                 sandbox,
+    #                 request.initial_message,
+    #                 request.system_message_suffix,
+    #                 request.git_provider,
+    #                 sandbox_spec.working_dir,
+    #                 request.agent_type,
+    #                 request.llm_model,
+    #                 request.conversation_id,
+    #                 remote_workspace=remote_workspace,
+    #                 selected_repository=request.selected_repository,
+    #                 plugins=request.plugins,
+    #             )
+    #         )
+
+    #         # update status
+    #         task.status = AppConversationStartTaskStatus.STARTING_CONVERSATION
+    #         task.agent_server_url = agent_server_url
+    #         yield task
+
+    #         # Start conversation...
+    #         body_json = start_conversation_request.model_dump(
+    #             mode='json', context={'expose_secrets': True}
+    #         )
+    #         response = await self.httpx_client.post(
+    #             f'{agent_server_url}/api/conversations',
+    #             json=body_json,
+    #             headers={'X-Session-API-Key': sandbox.session_api_key},
+    #             timeout=self.sandbox_startup_timeout,
+    #         )
+
+    #         response.raise_for_status()
+    #         info = ConversationInfo.model_validate(response.json())
+
+    #         # Store info...
+    #         user_id = await self.user_context.get_user_id()
+    #         app_conversation_info = AppConversationInfo(
+    #             id=info.id,
+    #             title=f'Conversation {info.id.hex[:5]}',
+    #             sandbox_id=sandbox.id,
+    #             created_by_user_id=user_id,
+    #             llm_model=start_conversation_request.agent.llm.model,
+    #             # Git parameters
+    #             selected_repository=request.selected_repository,
+    #             selected_branch=request.selected_branch,
+    #             git_provider=request.git_provider,
+    #             trigger=request.trigger,
+    #             pr_number=request.pr_number,
+    #             parent_conversation_id=request.parent_conversation_id,
+    #         )
+    #         await self.app_conversation_info_service.save_app_conversation_info(
+    #             app_conversation_info
+    #         )
+
+    #         # Setup default processors
+    #         processors = request.processors or []
+
+    #         # Always ensure SetTitleCallbackProcessor is included
+    #         has_set_title_processor = any(
+    #             isinstance(processor, SetTitleCallbackProcessor)
+    #             for processor in processors
+    #         )
+    #         if not has_set_title_processor:
+    #             processors.append(SetTitleCallbackProcessor())
+
+    #         # Save processors
+    #         for processor in processors:
+    #             await self.event_callback_service.save_event_callback(
+    #                 EventCallback(
+    #                     conversation_id=info.id,
+    #                     processor=processor,
+    #                 )
+    #             )
+
+    #         # Set security analyzer from settings
+    #         user = await self.user_context.get_user_info()
+    #         await self._set_security_analyzer_from_settings(
+    #             agent_server_url,
+    #             sandbox.session_api_key,
+    #             info.id,
+    #             user.security_analyzer,
+    #             self.httpx_client,
+    #         )
+
+    #         # Update the start task
+    #         task.status = AppConversationStartTaskStatus.READY
+    #         task.app_conversation_id = info.id
+    #         yield task
+
+    #     except Exception as exc:
+    #         _logger.exception('Error starting conversation', stack_info=True)
+    #         task.status = AppConversationStartTaskStatus.ERROR
+    #         task.detail = str(exc)
+    #         yield task
+
+
+    # async def _start_app_conversation(
+    #     self, request: AppConversationStartRequest
+    # ) -> AsyncGenerator[AppConversationStartTask, None]:
+    # # """
+    # # 启动应用对话的异步生成器函数
+    # # 包含完整的日志记录和错误诊断
+    # # """
+
+
+    # # 生成唯一的请求ID用于追踪
+
+    #     request_id = str(uuid.uuid4())[:8]
+    #     function_name = "_start_app_conversation"
+
+    #     # 记录函数开始
+    #     _logger.info(f"[{request_id}] ========== {function_name} STARTED ==========")
+    #     _logger.info(f"[{request_id}] Request type: {type(request).__name__}")
+    #     _logger.info(f"[{request_id}] Timestamp: {datetime.now().isoformat()}")
+
+    #     # 记录请求的关键信息
+    #     _logger.info(f"[{request_id}] Request summary:")
+    #     _logger.info(f"[{request_id}]   - parent_conversation_id: {request.parent_conversation_id}")
+    #     _logger.info(f"[{request_id}]   - initial_message: {request.initial_message[:50] if request.initial_message else 'None'}...")
+    #     _logger.info(f"[{request_id}]   - agent_type: {request.agent_type}")
+    #     _logger.info(f"[{request_id}]   - llm_model: {request.llm_model}")
+    #     _logger.info(f"[{request_id}]   - git_provider: {request.git_provider}")
+    #     _logger.info(f"[{request_id}]   - selected_repository: {request.selected_repository}")
+    #     _logger.info(f"[{request_id}]   - trigger: {request.trigger}")
+
+    #     # 初始化变量
+    #     task = None
+    #     sandbox = None
+    #     agent_server_url = None
+    #     start_time = time.time()
+    #     step_times = {}
+
+    #     try:
+    #         # ========== 步骤1: 获取用户ID ==========
+    #         step_name = "get_user_id"
+    #         step_times[step_name] = time.time()
+    #         _logger.info(f"[{request_id}] 📍 Step 1/13: Getting user ID...")
+
+    #         try:
+    #             user_id = await self.user_context.get_user_id()
+    #             _logger.info(f"[{request_id}] ✅ Got user ID: {user_id} (took {time.time() - step_times[step_name]:.3f}s)")
+    #         except Exception as e:
+    #             _logger.error(f"[{request_id}] ❌ Failed to get user ID: {str(e)}", exc_info=True)
+    #             raise ValueError(f"Failed to get user ID: {str(e)}") from e
+
+    #         # ========== 步骤2: 处理父对话 ==========
+    #         step_name = "parent_conversation"
+    #         step_times[step_name] = time.time()
+
+    #         if request.parent_conversation_id:
+    #             _logger.info(f"[{request_id}] 📍 Step 2/13: Checking parent conversation: {request.parent_conversation_id}")
+
+    #             try:
+    #                 parent_info = await self.app_conversation_info_service.get_app_conversation_info(
+    #                     request.parent_conversation_id
+    #                 )
+
+    #                 if parent_info is None:
+    #                     error_msg = f"Parent conversation not found: {request.parent_conversation_id}"
+    #                     _logger.error(f"[{request_id}] ❌ {error_msg}")
+    #                     raise ValueError(error_msg)
+
+    #                 _logger.info(f"[{request_id}] ✅ Parent conversation found (ID: {parent_info.id if hasattr(parent_info, 'id') else 'unknown'})")
+
+    #                 # 记录继承的配置
+    #                 _logger.info(f"[{request_id}]   Inheriting configuration from parent...")
+    #                 self._inherit_configuration_from_parent(request, parent_info)
+    #                 _logger.info(f"[{request_id}] ✅ Configuration inherited (took {time.time() - step_times[step_name]:.3f}s)")
+
+    #             except ValueError:
+    #                 raise
+    #             except Exception as e:
+    #                 _logger.error(f"[{request_id}] ❌ Unexpected error getting parent conversation: {str(e)}", exc_info=True)
+    #                 raise RuntimeError(f"Failed to process parent conversation: {str(e)}") from e
+    #         else:
+    #             _logger.info(f"[{request_id}] 📍 Step 2/13: No parent conversation (skipped)")
+
+    #         # ========== 步骤3: 创建初始任务 ==========
+    #         step_name = "create_task"
+    #         step_times[step_name] = time.time()
+    #         _logger.info(f"[{request_id}] 📍 Step 3/13: Creating initial task...")
+
+    #         try:
+    #             task = AppConversationStartTask(
+    #                 created_by_user_id=user_id,
+    #                 request=request,
+    #             )
+    #             task.status = AppConversationStartTaskStatus.WORKING
+    #             task.created_at = datetime.now()
+
+    #             _logger.info(f"[{request_id}] ✅ Task created (took {time.time() - step_times[step_name]:.3f}s)")
+    #             _logger.info(f"[{request_id}]   Task ID: {id(task)}")
+    #             _logger.info(f"[{request_id}]   Initial status: {task.status}")
+
+    #         except Exception as e:
+    #             _logger.error(f"[{request_id}] ❌ Failed to create task: {str(e)}", exc_info=True)
+    #             raise RuntimeError(f"Failed to create task: {str(e)}") from e
+
+    #         # ========== 首次yield: 初始状态 ==========
+    #         _logger.info(f"[{request_id}] 📤 YIELDING: Initial task (status: PENDING)")
+    #         _logger.info(f"[{request_id}]   Elapsed time: {time.time() - start_time:.3f}s")
+    #         yield task
+
+    #         # ========== 步骤4: 等待沙箱启动 ==========
+    #         step_name = "wait_sandbox"
+    #         step_times[step_name] = time.time()
+    #         _logger.info(f"[{request_id}] 📍 Step 4/13: Starting sandbox creation process...")
+
+    #         sandbox_steps = 0
+    #         try:
+    #             _logger.info(f"[{request_id}]   Calling _wait_for_sandbox_start...")
+    #             async for updated_task in self._wait_for_sandbox_start(task):
+    #                 sandbox_steps += 1
+    #                 sandbox_time = time.time() - step_times[step_name]
+    #                 _logger.info(f"[{request_id}]   ⚙️ Sandbox progress [{sandbox_steps}]: {updated_task.status} (elapsed: {sandbox_time:.3f}s)")
+
+    #                 # 更新task引用
+    #                 task = updated_task
+
+    #                 _logger.info(f"[{request_id}] 📤 YIELDING: Sandbox progress (step {sandbox_steps}, status: {task.status})")
+    #                 yield task
+
+    #             _logger.info(f"[{request_id}] ✅ Sandbox creation completed after {sandbox_steps} steps (total time: {time.time() - step_times[step_name]:.3f}s)")
+
+    #         except Exception as e:
+    #             _logger.error(f"[{request_id}] ❌ Sandbox creation failed: {str(e)}", exc_info=True)
+    #             if task:
+    #                 _logger.error(f"[{request_id}]   Task state at failure: status={task.status}, sandbox_id={task.sandbox_id}")
+    #             raise RuntimeError(f"Sandbox creation failed: {str(e)}") from e
+
+    #         # ========== 步骤5: 验证沙箱ID ==========
+    #         step_name = "validate_sandbox_id"
+    #         step_times[step_name] = time.time()
+    #         _logger.info(f"[{request_id}] 📍 Step 5/13: Validating sandbox ID...")
+
+    #         sandbox_id = task.sandbox_id
+    #         _logger.info(f"[{request_id}]   Sandbox ID from task: {sandbox_id}")
+
+    #         if sandbox_id is None:
+    #             error_msg = "sandbox_id is None after sandbox creation"
+    #             _logger.error(f"[{request_id}] ❌ {error_msg}")
+    #             raise ValueError(error_msg)
+
+    #         _logger.info(f"[{request_id}] ✅ Sandbox ID validated (took {time.time() - step_times[step_name]:.3f}s)")
+
+    #         # ========== 步骤6: 获取沙箱对象 ==========
+    #         step_name = "get_sandbox"
+    #         step_times[step_name] = time.time()
+    #         _logger.info(f"[{request_id}] 📍 Step 6/13: Getting sandbox object for ID: {sandbox_id}...")
+
+    #         try:
+    #             sandbox = await self.sandbox_service.get_sandbox(sandbox_id)
+
+    #             if sandbox is None:
+    #                 error_msg = f"Sandbox not found for id: {sandbox_id}"
+    #                 _logger.error(f"[{request_id}] ❌ {error_msg}")
+    #                 raise ValueError(error_msg)
+
+    #             _logger.info(f"[{request_id}] ✅ Sandbox retrieved (took {time.time() - step_times[step_name]:.3f}s)")
+    #             _logger.info(f"[{request_id}]   Sandbox details:")
+    #             _logger.info(f"[{request_id}]     - ID: {sandbox.id}")
+    #             _logger.info(f"[{request_id}]     - Status: {getattr(sandbox, 'status', 'unknown')}")
+    #             _logger.info(f"[{request_id}]     - sandbox_spec_id: {sandbox.sandbox_spec_id}")
+
+    #         except Exception as e:
+    #             _logger.error(f"[{request_id}] ❌ Failed to get sandbox: {str(e)}", exc_info=True)
+    #             raise RuntimeError(f"Failed to get sandbox: {str(e)}") from e
+
+    #         # ========== 步骤7: 获取Agent服务器URL ==========
+    #         step_name = "get_agent_url"
+    #         step_times[step_name] = time.time()
+    #         _logger.info(f"[{request_id}] 📍 Step 7/13: Getting agent server URL...")
+
+    #         try:
+    #             agent_server_url = self._get_agent_server_url(sandbox)
+    #             _logger.info(f"[{request_id}] ✅ Agent server URL: {agent_server_url} (took {time.time() - step_times[step_name]:.3f}s)")
+    #         except Exception as e:
+    #             _logger.error(f"[{request_id}] ❌ Failed to get agent server URL: {str(e)}", exc_info=True)
+    #             raise RuntimeError(f"Failed to get agent server URL: {str(e)}") from e
+
+    #         # ========== 步骤8: 获取沙箱规格 ==========
+    #         step_name = "get_sandbox_spec"
+    #         step_times[step_name] = time.time()
+    #         _logger.info(f"[{request_id}] 📍 Step 8/13: Getting sandbox specification (ID: {sandbox.sandbox_spec_id})...")
+
+    #         try:
+    #             sandbox_spec = await self.sandbox_spec_service.get_sandbox_spec(
+    #                 sandbox.sandbox_spec_id
+    #             )
+
+    #             if sandbox_spec is None:
+    #                 error_msg = f"Sandbox spec not found for id: {sandbox.sandbox_spec_id}"
+    #                 _logger.error(f"[{request_id}] ❌ {error_msg}")
+    #                 raise ValueError(error_msg)
+
+    #             _logger.info(f"[{request_id}] ✅ Sandbox spec retrieved (took {time.time() - step_times[step_name]:.3f}s)")
+    #             _logger.info(f"[{request_id}]   Working directory: {sandbox_spec.working_dir}")
+
+    #         except Exception as e:
+    #             _logger.error(f"[{request_id}] ❌ Failed to get sandbox spec: {str(e)}", exc_info=True)
+    #             raise RuntimeError(f"Failed to get sandbox spec: {str(e)}") from e
+
+    #         # ========== 步骤9: 创建远程工作区 ==========
+    #         step_name = "create_workspace"
+    #         step_times[step_name] = time.time()
+    #         _logger.info(f"[{request_id}] 📍 Step 9/13: Creating remote workspace...")
+
+    #         try:
+    #             remote_workspace = AsyncRemoteWorkspace(
+    #                 host=agent_server_url,
+    #                 api_key=sandbox.session_api_key,
+    #                 working_dir=sandbox_spec.working_dir,
+    #             )
+
+    #             _logger.info(f"[{request_id}] ✅ Remote workspace created (took {time.time() - step_times[step_name]:.3f}s)")
+    #             _logger.info(f"[{request_id}]   Workspace host: {agent_server_url}")
+    #             _logger.info(f"[{request_id}]   Working dir: {sandbox_spec.working_dir}")
+
+    #         except Exception as e:
+    #             _logger.error(f"[{request_id}] ❌ Failed to create remote workspace: {str(e)}", exc_info=True)
+    #             raise RuntimeError(f"Failed to create remote workspace: {str(e)}") from e
+
+    #         # ========== 步骤10: 运行设置脚本 ==========
+    #         step_name = "setup_scripts"
+    #         step_times[step_name] = time.time()
+    #         _logger.info(f"[{request_id}] 📍 Step 10/13: Running setup scripts...")
+
+    #         setup_steps = 0
+    #         try:
+    #             _logger.info(f"[{request_id}]   Calling run_setup_scripts...")
+    #             async for updated_task in self.run_setup_scripts(
+    #                 task, sandbox, remote_workspace, agent_server_url
+    #             ):
+    #                 setup_steps += 1
+    #                 setup_time = time.time() - step_times[step_name]
+    #                 _logger.info(f"[{request_id}]   ⚙️ Setup progress [{setup_steps}]: {updated_task.status} (elapsed: {setup_time:.3f}s)")
+
+    #                 # 更新task引用
+    #                 task = updated_task
+
+    #                 _logger.info(f"[{request_id}] 📤 YIELDING: Setup progress (step {setup_steps}, status: {task.status})")
+    #                 yield task
+
+    #             _logger.info(f"[{request_id}] ✅ Setup scripts completed after {setup_steps} steps (total time: {time.time() - step_times[step_name]:.3f}s)")
+
+    #         except Exception as e:
+    #             _logger.error(f"[{request_id}] ❌ Setup scripts failed: {str(e)}", exc_info=True)
+    #             raise RuntimeError(f"Setup scripts failed: {str(e)}") from e
+
+    #         # ========== 步骤11: 构建启动请求 ==========
+    #         step_name = "build_request"
+    #         step_times[step_name] = time.time()
+    #         _logger.info(f"[{request_id}] 📍 Step 11/13: Building conversation start request...")
+
+    #         try:
+    #             start_conversation_request = await self._build_start_conversation_request_for_user(
+    #                 sandbox,
+    #                 request.initial_message,
+    #                 request.system_message_suffix,
+    #                 request.git_provider,
+    #                 sandbox_spec.working_dir,
+    #                 request.agent_type,
+    #                 request.llm_model,
+    #                 request.conversation_id,
+    #                 remote_workspace=remote_workspace,
+    #                 selected_repository=request.selected_repository,
+    #                 plugins=request.plugins,
+    #             )
+
+    #             _logger.info(f"[{request_id}] ✅ Request built (took {time.time() - step_times[step_name]:.3f}s)")
+
+    #             # 记录请求摘要
+    #             if hasattr(start_conversation_request, 'agent') and hasattr(start_conversation_request.agent, 'llm'):
+    #                 _logger.info(f"[{request_id}]   LLM model: {start_conversation_request.agent.llm.model}")
+
+    #         except Exception as e:
+    #             _logger.error(f"[{request_id}] ❌ Failed to build request: {str(e)}", exc_info=True)
+    #             raise RuntimeError(f"Failed to build request: {str(e)}") from e
+
+    #         # ========== 步骤12: 更新状态为STARTING ==========
+    #         step_name = "update_starting_status"
+    #         step_times[step_name] = time.time()
+    #         _logger.info(f"[{request_id}] 📍 Step 12/13: Updating task status to STARTING_CONVERSATION...")
+
+    #         task.status = AppConversationStartTaskStatus.STARTING_CONVERSATION
+    #         task.agent_server_url = agent_server_url
+
+    #         _logger.info(f"[{request_id}] ✅ Status updated (took {time.time() - step_times[step_name]:.3f}s)")
+    #         _logger.info(f"[{request_id}] 📤 YIELDING: STARTING_CONVERSATION status")
+    #         yield task
+
+    #         # ========== 步骤13: 发送HTTP请求到Agent服务器 ==========
+    #         step_name = "http_request"
+    #         step_times[step_name] = time.time()
+    #         _logger.info(f"[{request_id}] 📍 Step 13/13: Sending HTTP request to agent server...")
+    #         _logger.info(f"[{request_id}]   URL: {agent_server_url}/api/conversations")
+    #         _logger.info(f"[{request_id}]   Timeout: {self.sandbox_startup_timeout}s")
+
+    #         # 准备请求体
+    #         try:
+    #             body_json = start_conversation_request.model_dump(
+    #                 mode='json', context={'expose_secrets': True}
+    #             )
+    #             request_size = len(str(body_json))
+    #             _logger.info(f"[{request_id}]   Request body size: {request_size} chars")
+
+    #             if request_size > 10000:
+    #                 _logger.warning(f"[{request_id}]   Large request body detected ({request_size} chars)")
+
+    #         except Exception as e:
+    #             _logger.error(f"[{request_id}] ❌ Failed to dump request model: {str(e)}", exc_info=True)
+    #             raise RuntimeError(f"Failed to prepare request: {str(e)}") from e
+
+    #         # 发送请求
+    #         try:
+    #             response = await self.httpx_client.post(
+    #                 f'{agent_server_url}/api/conversations',
+    #                 json=body_json,
+    #                 headers={
+    #                     'X-Session-API-Key': sandbox.session_api_key,
+    #                     'X-Request-ID': request_id,
+    #                     'Content-Type': 'application/json'
+    #                 },
+    #                 timeout=self.sandbox_startup_timeout,
+    #             )
+
+    #             http_time = time.time() - step_times[step_name]
+    #             _logger.info(f"[{request_id}] ✅ HTTP request completed (took {http_time:.3f}s)")
+    #             _logger.info(f"[{request_id}]   Response status: {response.status_code}")
+    #             _logger.info(f"[{request_id}]   Response headers: {dict(response.headers)}")
+
+    #             # 检查响应状态
+    #             if response.status_code >= 400:
+    #                 error_body = response.text[:500]
+    #                 _logger.error(f"[{request_id}] ❌ HTTP error response: {response.status_code}")
+    #                 _logger.error(f"[{request_id}]   Response body: {error_body}")
+    #                 response.raise_for_status()
+
+    #             # 解析响应
+    #             try:
+    #                 response_data = response.json()
+    #                 info = ConversationInfo.model_validate(response_data)
+    #                 _logger.info(f"[{request_id}] ✅ Response parsed successfully")
+    #                 _logger.info(f"[{request_id}]   Conversation ID: {info.id}")
+
+    #             except Exception as e:
+    #                 _logger.error(f"[{request_id}] ❌ Failed to parse response: {str(e)}", exc_info=True)
+    #                 _logger.error(f"[{request_id}]   Raw response: {response.text[:500]}")
+    #                 raise ValueError(f"Invalid response from agent server: {str(e)}") from e
+
+    #         except httpx.TimeoutException as e:
+    #             _logger.error(f"[{request_id}] ❌ HTTP request timed out after {self.sandbox_startup_timeout}s")
+    #             _logger.error(f"[{request_id}]   URL: {agent_server_url}/api/conversations")
+    #             raise TimeoutError(f"Agent server timeout after {self.sandbox_startup_timeout}s") from e
+
+    #         except httpx.HTTPStatusError as e:
+    #             _logger.error(f"[{request_id}] ❌ HTTP status error: {e.response.status_code}")
+    #             _logger.error(f"[{request_id}]   Response: {e.response.text[:500]}")
+    #             raise
+
+    #         except Exception as e:
+    #             _logger.error(f"[{request_id}] ❌ HTTP request failed: {str(e)}", exc_info=True)
+    #             raise
+
+    #         # ========== 保存对话信息到数据库 ==========
+    #         step_name = "save_conversation"
+    #         step_times[step_name] = time.time()
+    #         _logger.info(f"[{request_id}] Saving conversation info to database...")
+
+    #         try:
+    #             # 再次获取用户ID（确保最新）
+    #             user_id = await self.user_context.get_user_id()
+
+    #             app_conversation_info = AppConversationInfo(
+    #                 id=info.id,
+    #                 title=f'Conversation {info.id.hex[:5]}',
+    #                 sandbox_id=sandbox.id,
+    #                 created_by_user_id=user_id,
+    #                 llm_model=start_conversation_request.agent.llm.model if hasattr(start_conversation_request, 'agent') else request.llm_model,
+    #                 selected_repository=request.selected_repository,
+    #                 selected_branch=request.selected_branch,
+    #                 git_provider=request.git_provider,
+    #                 trigger=request.trigger,
+    #                 pr_number=request.pr_number,
+    #                 parent_conversation_id=request.parent_conversation_id,
+    #             )
+
+    #             await self.app_conversation_info_service.save_app_conversation_info(
+    #                 app_conversation_info
+    #             )
+
+    #             _logger.info(f"[{request_id}] ✅ Conversation info saved (took {time.time() - step_times[step_name]:.3f}s)")
+    #             _logger.info(f"[{request_id}]   Conversation title: {app_conversation_info.title}")
+
+    #         except Exception as e:
+    #             _logger.error(f"[{request_id}] ❌ Failed to save conversation info: {str(e)}", exc_info=True)
+    #             # 不抛出异常，继续执行，但记录错误
+
+    #         # ========== 设置默认处理器 ==========
+    #         step_name = "setup_processors"
+    #         step_times[step_name] = time.time()
+    #         _logger.info(f"[{request_id}] Setting up event processors...")
+
+    #         try:
+    #             processors = request.processors or []
+    #             _logger.info(f"[{request_id}]   Initial processors count: {len(processors)}")
+
+    #             # 确保包含SetTitleCallbackProcessor
+    #             has_set_title_processor = any(
+    #                 isinstance(processor, SetTitleCallbackProcessor)
+    #                 for processor in processors
+    #             )
+
+    #             if not has_set_title_processor:
+    #                 processors.append(SetTitleCallbackProcessor())
+    #                 _logger.info(f"[{request_id}]   Added SetTitleCallbackProcessor")
+
+    #             # 保存每个processor
+    #             for i, processor in enumerate(processors):
+    #                 await self.event_callback_service.save_event_callback(
+    #                     EventCallback(
+    #                         conversation_id=info.id,
+    #                         processor=processor,
+    #                     )
+    #                 )
+    #                 _logger.info(f"[{request_id}]   Saved processor {i+1}/{len(processors)}: {type(processor).__name__}")
+
+    #             _logger.info(f"[{request_id}] ✅ Processors saved (took {time.time() - step_times[step_name]:.3f}s)")
+
+    #         except Exception as e:
+    #             _logger.error(f"[{request_id}] ❌ Failed to save processors: {str(e)}", exc_info=True)
+    #             # 不抛出异常，继续执行
+
+    #         # ========== 设置安全分析器 ==========
+    #         step_name = "security_analyzer"
+    #         step_times[step_name] = time.time()
+    #         _logger.info(f"[{request_id}] Setting up security analyzer...")
+
+    #         try:
+    #             user = await self.user_context.get_user_info()
+    #             _logger.info(f"[{request_id}]   User security analyzer: {user.security_analyzer if hasattr(user, 'security_analyzer') else 'default'}")
+
+    #             await self._set_security_analyzer_from_settings(
+    #                 agent_server_url,
+    #                 sandbox.session_api_key,
+    #                 info.id,
+    #                 user.security_analyzer if hasattr(user, 'security_analyzer') else None,
+    #                 self.httpx_client,
+    #             )
+
+    #             _logger.info(f"[{request_id}] ✅ Security analyzer configured (took {time.time() - step_times[step_name]:.3f}s)")
+
+    #         except Exception as e:
+    #             _logger.error(f"[{request_id}] ❌ Failed to set security analyzer: {str(e)}", exc_info=True)
+    #             # 不抛出异常，继续执行
+
+    #         # ========== 最终状态：成功 ==========
+    #         total_time = time.time() - start_time
+    #         _logger.info(f"[{request_id}] ========== CONVERSATION STARTED SUCCESSFULLY ==========")
+    #         _logger.info(f"[{request_id}] Total time: {total_time:.3f}s")
+    #         _logger.info(f"[{request_id}] Conversation ID: {info.id}")
+    #         _logger.info(f"[{request_id}] Agent server URL: {agent_server_url}")
+
+    #         task.status = AppConversationStartTaskStatus.READY
+    #         task.app_conversation_id = info.id
+
+    #         _logger.info(f"[{request_id}] 📤 YIELDING: FINAL READY status")
+    #         yield task
+
+    #     except Exception as exc:
+    #         total_time = time.time() - start_time
+    #         _logger.error(f"[{request_id}] ========== ERROR STARTING CONVERSATION ==========")
+    #         _logger.error(f"[{request_id}] Error type: {type(exc).__name__}")
+    #         _logger.error(f"[{request_id}] Error message: {str(exc)}")
+    #         _logger.error(f"[{request_id}] Total time before error: {total_time:.3f}s")
+    #         _logger.exception(f"[{request_id}] Full stack trace:", exc_info=True)
+
+    #         # 记录关键变量的状态
+    #         _logger.error(f"[{request_id}] Variable states at error:")
+    #         _logger.error(f"[{request_id}]   - task exists: {task is not None}")
+    #         if task:
+    #             _logger.error(f"[{request_id}]   - task.status: {getattr(task, 'status', 'N/A')}")
+    #             _logger.error(f"[{request_id}]   - task.sandbox_id: {getattr(task, 'sandbox_id', 'N/A')}")
+
+    #         _logger.error(f"[{request_id}]   - sandbox exists: {sandbox is not None}")
+    #         if sandbox:
+    #             _logger.error(f"[{request_id}]   - sandbox.id: {getattr(sandbox, 'id', 'N/A')}")
+
+    #         _logger.error(f"[{request_id}]   - agent_server_url: {agent_server_url}")
+
+    #         # 记录请求信息
+    #         _logger.error(f"[{request_id}] Request that caused error:")
+    #         _logger.error(f"[{request_id}]   - parent_conversation_id: {request.parent_conversation_id}")
+    #         _logger.error(f"[{request_id}]   - agent_type: {request.agent_type}")
+    #         _logger.error(f"[{request_id}]   - llm_model: {request.llm_model}")
+
+    #         # 更新task为错误状态
+    #         if task:
+    #             task.status = AppConversationStartTaskStatus.ERROR
+    #             task.detail = f"{type(exc).__name__}: {str(exc)}"
+    #             # task.error_time = datetime.now()
+    #         else:
+    #             # 如果没有task，创建一个新的错误task
+    #             task = AppConversationStartTask(
+    #                 created_by_user_id="unknown",
+    #                 request=request,
+    #                 status=AppConversationStartTaskStatus.ERROR,
+    #                 detail=f"{type(exc).__name__}: {str(exc)}"
+    #             )
+
+    #         _logger.info(f"[{request_id}] 📤 YIELDING: ERROR status")
+    #         yield task
+
+    #     finally:
+    #         _logger.info(f"[{request_id}] ========== {function_name} FINISHED ==========")
+    #         _logger.info(f"[{request_id}] Total time: {time.time() - start_time:.3f}s")
+
     async def _start_app_conversation(
         self, request: AppConversationStartRequest
     ) -> AsyncGenerator[AppConversationStartTask, None]:
-        # Create and yield the start task
-        user_id = await self.user_context.get_user_id()
+        """
+        启动应用对话的异步生成器函数
+        包含完整的日志记录和错误诊断
+        """
+        import time
+        import uuid
+        from datetime import datetime
 
-        # Validate and inherit from parent conversation if provided
-        if request.parent_conversation_id:
-            parent_info = (
-                await self.app_conversation_info_service.get_app_conversation_info(
-                    request.parent_conversation_id
-                )
-            )
-            if parent_info is None:
-                raise ValueError(
-                    f'Parent conversation not found: {request.parent_conversation_id}'
-                )
-            self._inherit_configuration_from_parent(request, parent_info)
+        # 生成唯一的请求ID用于追踪
+        request_id = str(uuid.uuid4())[:8]
+        function_name = "_start_app_conversation"
 
-        task = AppConversationStartTask(
-            created_by_user_id=user_id,
-            request=request,
-        )
-        yield task
+        # 记录函数开始
+        _logger.info(f"[{request_id}] ========== {function_name} STARTED ==========")
+        _logger.info(f"[{request_id}] Request type: {type(request).__name__}")
+        _logger.info(f"[{request_id}] Timestamp: {datetime.now().isoformat()}")
+
+        # 记录请求的关键信息
+        _logger.info(f"[{request_id}] Request summary:")
+        _logger.info(f"[{request_id}]   - parent_conversation_id: {request.parent_conversation_id}")
+        _logger.info(f"[{request_id}]   - initial_message: {request.initial_message[:50] if request.initial_message else 'None'}...")
+        _logger.info(f"[{request_id}]   - agent_type: {request.agent_type}")
+        _logger.info(f"[{request_id}]   - llm_model: {request.llm_model}")
+        _logger.info(f"[{request_id}]   - git_provider: {request.git_provider}")
+        _logger.info(f"[{request_id}]   - selected_repository: {request.selected_repository}")
+        _logger.info(f"[{request_id}]   - trigger: {request.trigger}")
+
+        # 初始化变量
+        task = None
+        sandbox = None
+        agent_server_url = None
+        start_time = time.time()
+        step_times = {}
 
         try:
-            async for updated_task in self._wait_for_sandbox_start(task):
-                yield updated_task
+            # ========== 步骤1: 获取用户ID ==========
+            step_name = "get_user_id"
+            step_times[step_name] = time.time()
+            _logger.info(f"[{request_id}] 📍 Step 1/13: Getting user ID...")
 
-            # Get the sandbox
+            try:
+                user_id = await self.user_context.get_user_id()
+                _logger.info(f"[{request_id}] ✅ Got user ID: {user_id} (took {time.time() - step_times[step_name]:.3f}s)")
+            except Exception as e:
+                _logger.error(f"[{request_id}] ❌ Failed to get user ID: {str(e)}", exc_info=True)
+                raise ValueError(f"Failed to get user ID: {str(e)}") from e
+
+            # ========== 步骤2: 处理父对话 ==========
+            step_name = "parent_conversation"
+            step_times[step_name] = time.time()
+
+            if request.parent_conversation_id:
+                _logger.info(f"[{request_id}] 📍 Step 2/13: Checking parent conversation: {request.parent_conversation_id}")
+
+                try:
+                    parent_info = await self.app_conversation_info_service.get_app_conversation_info(
+                        request.parent_conversation_id
+                    )
+
+                    if parent_info is None:
+                        error_msg = f"Parent conversation not found: {request.parent_conversation_id}"
+                        _logger.error(f"[{request_id}] ❌ {error_msg}")
+                        raise ValueError(error_msg)
+
+                    _logger.info(f"[{request_id}] ✅ Parent conversation found (ID: {parent_info.id if hasattr(parent_info, 'id') else 'unknown'})")
+
+                    # 记录继承的配置
+                    _logger.info(f"[{request_id}]   Inheriting configuration from parent...")
+                    self._inherit_configuration_from_parent(request, parent_info)
+                    _logger.info(f"[{request_id}] ✅ Configuration inherited (took {time.time() - step_times[step_name]:.3f}s)")
+
+                except ValueError:
+                    raise
+                except Exception as e:
+                    _logger.error(f"[{request_id}] ❌ Unexpected error getting parent conversation: {str(e)}", exc_info=True)
+                    raise RuntimeError(f"Failed to process parent conversation: {str(e)}") from e
+            else:
+                _logger.info(f"[{request_id}] 📍 Step 2/13: No parent conversation (skipped)")
+
+            # ========== 步骤3: 创建初始任务 ==========
+            step_name = "create_task"
+            step_times[step_name] = time.time()
+            _logger.info(f"[{request_id}] 📍 Step 3/13: Creating initial task...")
+
+            try:
+                task = AppConversationStartTask(
+                    created_by_user_id=user_id,
+                    request=request,
+                )
+                task.status = AppConversationStartTaskStatus.WORKING
+                task.created_at = datetime.now()
+
+                _logger.info(f"[{request_id}] ✅ Task created (took {time.time() - step_times[step_name]:.3f}s)")
+                _logger.info(f"[{request_id}]   Task ID: {id(task)}")
+                _logger.info(f"[{request_id}]   Initial status: {task.status}")
+
+            except Exception as e:
+                _logger.error(f"[{request_id}] ❌ Failed to create task: {str(e)}", exc_info=True)
+                raise RuntimeError(f"Failed to create task: {str(e)}") from e
+
+            # ========== 首次yield: 初始状态 ==========
+            _logger.info(f"[{request_id}] 📤 YIELDING: Initial task (status: WORKING)")
+            _logger.info(f"[{request_id}]   Elapsed time: {time.time() - start_time:.3f}s")
+            yield task
+
+            # ========== 步骤4: 等待沙箱启动 ==========
+            step_name = "wait_sandbox"
+            step_times[step_name] = time.time()
+            _logger.info(f"[{request_id}] 📍 Step 4/13: Starting sandbox creation process...")
+
+            sandbox_steps = 0
+            try:
+                _logger.info(f"[{request_id}]   Calling _wait_for_sandbox_start...")
+                async for updated_task in self._wait_for_sandbox_start(task):
+                    sandbox_steps += 1
+                    sandbox_time = time.time() - step_times[step_name]
+                    _logger.info(f"[{request_id}]   ⚙️ Sandbox progress [{sandbox_steps}]: {updated_task.status} (elapsed: {sandbox_time:.3f}s)")
+
+                    # 更新task引用
+                    task = updated_task
+
+                    _logger.info(f"[{request_id}] 📤 YIELDING: Sandbox progress (step {sandbox_steps}, status: {task.status})")
+                    yield task
+
+                _logger.info(f"[{request_id}] ✅ Sandbox creation completed after {sandbox_steps} steps (total time: {time.time() - step_times[step_name]:.3f}s)")
+
+            except Exception as e:
+                _logger.error(f"[{request_id}] ❌ Sandbox creation failed: {str(e)}", exc_info=True)
+                if task:
+                    _logger.error(f"[{request_id}]   Task state at failure: status={task.status}, sandbox_id={task.sandbox_id}")
+                raise RuntimeError(f"Sandbox creation failed: {str(e)}") from e
+
+            # ========== 步骤5: 验证沙箱ID ==========
+            step_name = "validate_sandbox_id"
+            step_times[step_name] = time.time()
+            _logger.info(f"[{request_id}] 📍 Step 5/13: Validating sandbox ID...")
+
             sandbox_id = task.sandbox_id
-            assert sandbox_id is not None
-            sandbox = await self.sandbox_service.get_sandbox(sandbox_id)
-            assert sandbox is not None
-            agent_server_url = self._get_agent_server_url(sandbox)
+            _logger.info(f"[{request_id}]   Sandbox ID from task: {sandbox_id}")
 
-            # Get the working dir
-            sandbox_spec = await self.sandbox_spec_service.get_sandbox_spec(
-                sandbox.sandbox_spec_id
-            )
-            assert sandbox_spec is not None
+            if sandbox_id is None:
+                error_msg = "sandbox_id is None after sandbox creation"
+                _logger.error(f"[{request_id}] ❌ {error_msg}")
+                raise ValueError(error_msg)
 
-            # Run setup scripts
-            remote_workspace = AsyncRemoteWorkspace(
-                host=agent_server_url,
-                api_key=sandbox.session_api_key,
-                working_dir=sandbox_spec.working_dir,
-            )
-            async for updated_task in self.run_setup_scripts(
-                task, sandbox, remote_workspace, agent_server_url
-            ):
-                yield updated_task
+            _logger.info(f"[{request_id}] ✅ Sandbox ID validated (took {time.time() - step_times[step_name]:.3f}s)")
 
-            # Build the start request
-            start_conversation_request = (
-                await self._build_start_conversation_request_for_user(
+            # ========== 步骤6: 获取沙箱对象 ==========
+            step_name = "get_sandbox"
+            step_times[step_name] = time.time()
+            _logger.info(f"[{request_id}] 📍 Step 6/13: Getting sandbox object for ID: {sandbox_id}...")
+
+            try:
+                sandbox = await self.sandbox_service.get_sandbox(sandbox_id)
+
+                if sandbox is None:
+                    error_msg = f"Sandbox not found for id: {sandbox_id}"
+                    _logger.error(f"[{request_id}] ❌ {error_msg}")
+                    raise ValueError(error_msg)
+
+                _logger.info(f"[{request_id}] ✅ Sandbox retrieved (took {time.time() - step_times[step_name]:.3f}s)")
+                _logger.info(f"[{request_id}]   Sandbox details:")
+                _logger.info(f"[{request_id}]     - ID: {sandbox.id}")
+                _logger.info(f"[{request_id}]     - Status: {getattr(sandbox, 'status', 'unknown')}")
+                _logger.info(f"[{request_id}]     - sandbox_spec_id: {sandbox.sandbox_spec_id}")
+
+            except Exception as e:
+                _logger.error(f"[{request_id}] ❌ Failed to get sandbox: {str(e)}", exc_info=True)
+                raise RuntimeError(f"Failed to get sandbox: {str(e)}") from e
+
+            # ========== 步骤7: 获取Agent服务器URL ==========
+            step_name = "get_agent_url"
+            step_times[step_name] = time.time()
+            _logger.info(f"[{request_id}] 📍 Step 7/13: Getting agent server URL...")
+
+            try:
+                agent_server_url = self._get_agent_server_url(sandbox)
+                _logger.info(f"[{request_id}] ✅ Agent server URL: {agent_server_url} (took {time.time() - step_times[step_name]:.3f}s)")
+            except Exception as e:
+                _logger.error(f"[{request_id}] ❌ Failed to get agent server URL: {str(e)}", exc_info=True)
+                raise RuntimeError(f"Failed to get agent server URL: {str(e)}") from e
+
+            # ========== 步骤8: 获取沙箱规格 ==========
+            step_name = "get_sandbox_spec"
+            step_times[step_name] = time.time()
+            _logger.info(f"[{request_id}] 📍 Step 8/13: Getting sandbox specification (ID: {sandbox.sandbox_spec_id})...")
+
+            try:
+                sandbox_spec = await self.sandbox_spec_service.get_sandbox_spec(
+                    sandbox.sandbox_spec_id
+                )
+
+                if sandbox_spec is None:
+                    error_msg = f"Sandbox spec not found for id: {sandbox.sandbox_spec_id}"
+                    _logger.error(f"[{request_id}] ❌ {error_msg}")
+                    raise ValueError(error_msg)
+
+                _logger.info(f"[{request_id}] ✅ Sandbox spec retrieved (took {time.time() - step_times[step_name]:.3f}s)")
+                _logger.info(f"[{request_id}]   Working directory: {sandbox_spec.working_dir}")
+
+            except Exception as e:
+                _logger.error(f"[{request_id}] ❌ Failed to get sandbox spec: {str(e)}", exc_info=True)
+                raise RuntimeError(f"Failed to get sandbox spec: {str(e)}") from e
+
+            # ========== 步骤9: 创建远程工作区 ==========
+            step_name = "create_workspace"
+            step_times[step_name] = time.time()
+            _logger.info(f"[{request_id}] 📍 Step 9/13: Creating remote workspace...")
+
+            try:
+                remote_workspace = AsyncRemoteWorkspace(
+                    host=agent_server_url,
+                    api_key=sandbox.session_api_key,
+                    working_dir=sandbox_spec.working_dir,
+                )
+
+                _logger.info(f"[{request_id}] ✅ Remote workspace created (took {time.time() - step_times[step_name]:.3f}s)")
+                _logger.info(f"[{request_id}]   Workspace host: {agent_server_url}")
+                _logger.info(f"[{request_id}]   Working dir: {sandbox_spec.working_dir}")
+
+            except Exception as e:
+                _logger.error(f"[{request_id}] ❌ Failed to create remote workspace: {str(e)}", exc_info=True)
+                raise RuntimeError(f"Failed to create remote workspace: {str(e)}") from e
+
+            # ========== 步骤10: 运行设置脚本 ==========
+            step_name = "setup_scripts"
+            step_times[step_name] = time.time()
+            _logger.info(f"[{request_id}] 📍 Step 10/13: Running setup scripts...")
+
+            setup_steps = 0
+            try:
+                _logger.info(f"[{request_id}]   Calling run_setup_scripts...")
+                async for updated_task in self.run_setup_scripts(
+                    task, sandbox, remote_workspace, agent_server_url
+                ):
+                    setup_steps += 1
+                    setup_time = time.time() - step_times[step_name]
+                    _logger.info(f"[{request_id}]   ⚙️ Setup progress [{setup_steps}]: {updated_task.status} (elapsed: {setup_time:.3f}s)")
+
+                    # 更新task引用
+                    task = updated_task
+
+                    _logger.info(f"[{request_id}] 📤 YIELDING: Setup progress (step {setup_steps}, status: {task.status})")
+                    yield task
+
+                _logger.info(f"[{request_id}] ✅ Setup scripts completed after {setup_steps} steps (total time: {time.time() - step_times[step_name]:.3f}s)")
+
+            except Exception as e:
+                _logger.error(f"[{request_id}] ❌ Setup scripts failed: {str(e)}", exc_info=True)
+                raise RuntimeError(f"Setup scripts failed: {str(e)}") from e
+
+            # ========== 步骤11: 构建启动请求 ==========
+            step_name = "build_request"
+            step_times[step_name] = time.time()
+            _logger.info(f"[{request_id}] 📍 Step 11/13: Building conversation start request...")
+
+            try:
+                start_conversation_request = await self._build_start_conversation_request_for_user(
                     sandbox,
                     request.initial_message,
                     request.system_message_suffix,
@@ -258,87 +1140,321 @@ class LiveStatusAppConversationService(AppConversationServiceBase):
                     selected_repository=request.selected_repository,
                     plugins=request.plugins,
                 )
-            )
 
-            # update status
+                _logger.info(f"[{request_id}] ✅ Request built (took {time.time() - step_times[step_name]:.3f}s)")
+
+                # 记录请求摘要
+                if hasattr(start_conversation_request, 'agent') and hasattr(start_conversation_request.agent, 'llm'):
+                    _logger.info(f"[{request_id}]   LLM model: {start_conversation_request.agent.llm.model}")
+
+            except Exception as e:
+                _logger.error(f"[{request_id}] ❌ Failed to build request: {str(e)}", exc_info=True)
+                raise RuntimeError(f"Failed to build request: {str(e)}") from e
+
+            # ========== 步骤12: 更新状态为STARTING ==========
+            step_name = "update_starting_status"
+            step_times[step_name] = time.time()
+            _logger.info(f"[{request_id}] 📍 Step 12/13: Updating task status to STARTING_CONVERSATION...")
+
             task.status = AppConversationStartTaskStatus.STARTING_CONVERSATION
             task.agent_server_url = agent_server_url
+
+            _logger.info(f"[{request_id}] ✅ Status updated (took {time.time() - step_times[step_name]:.3f}s)")
+            _logger.info(f"[{request_id}] 📤 YIELDING: STARTING_CONVERSATION status")
             yield task
 
-            # Start conversation...
-            body_json = start_conversation_request.model_dump(
-                mode='json', context={'expose_secrets': True}
-            )
-            response = await self.httpx_client.post(
-                f'{agent_server_url}/api/conversations',
-                json=body_json,
-                headers={'X-Session-API-Key': sandbox.session_api_key},
-                timeout=self.sandbox_startup_timeout,
-            )
+            # ========== 步骤13: 发送HTTP请求到Agent服务器 ==========
+            step_name = "http_request"
+            step_times[step_name] = time.time()
+            _logger.info(f"[{request_id}] 📍 Step 13/13: Sending HTTP request to agent server...")
+            _logger.info(f"[{request_id}]   URL: {agent_server_url}/api/conversations")
+            _logger.info(f"[{request_id}]   Timeout: {self.sandbox_startup_timeout}s")
 
-            response.raise_for_status()
-            info = ConversationInfo.model_validate(response.json())
+            # 准备请求体
+            try:
+                body_json = start_conversation_request.model_dump(
+                    mode='json', context={'expose_secrets': True}
+                )
+                request_size = len(str(body_json))
+                _logger.info(f"[{request_id}]   Request body size: {request_size} chars")
 
-            # Store info...
-            user_id = await self.user_context.get_user_id()
-            app_conversation_info = AppConversationInfo(
-                id=info.id,
-                title=f'Conversation {info.id.hex[:5]}',
-                sandbox_id=sandbox.id,
-                created_by_user_id=user_id,
-                llm_model=start_conversation_request.agent.llm.model,
-                # Git parameters
-                selected_repository=request.selected_repository,
-                selected_branch=request.selected_branch,
-                git_provider=request.git_provider,
-                trigger=request.trigger,
-                pr_number=request.pr_number,
-                parent_conversation_id=request.parent_conversation_id,
-            )
-            await self.app_conversation_info_service.save_app_conversation_info(
-                app_conversation_info
-            )
+                # ===== 强制技能精简 - 如果请求太大 =====
+                if request_size > 50000:  # 如果大于50KB
+                    _logger.warning(f"[{request_id}] ⚠️ Large request body detected ({request_size} chars)")
 
-            # Setup default processors
-            processors = request.processors or []
+                    try:
+                        if hasattr(start_conversation_request, 'agent') and start_conversation_request.agent:
+                            if hasattr(start_conversation_request.agent, 'agent_context') and start_conversation_request.agent.agent_context:
+                                if hasattr(start_conversation_request.agent.agent_context, 'skills'):
+                                    original_skills = start_conversation_request.agent.agent_context.skills
 
-            # Always ensure SetTitleCallbackProcessor is included
-            has_set_title_processor = any(
-                isinstance(processor, SetTitleCallbackProcessor)
-                for processor in processors
-            )
-            if not has_set_title_processor:
-                processors.append(SetTitleCallbackProcessor())
+                                    if original_skills:
+                                        original_count = len(original_skills)
 
-            # Save processors
-            for processor in processors:
-                await self.event_callback_service.save_event_callback(
-                    EventCallback(
-                        conversation_id=info.id,
-                        processor=processor,
-                    )
+                                        # 绝对核心技能列表
+                                        essential_skill_names = [
+                                            'docker', 'git', 'python', 'npm', 'node',
+                                            'releasenotes', 'agent-memory', 'readiness-report',
+                                            'github', 'code-review', 'security',
+                                            'init', 'add-skill', 'ssh', 'jupyter',
+                                            'docker', 'kubernetes', 'uv'
+                                        ]
+
+                                        # 过滤技能
+                                        forced_skills = []
+                                        removed_skills = []
+
+                                        for skill in original_skills:
+                                            skill_name = skill.name if hasattr(skill, 'name') else str(skill)
+
+                                            # 检查是否是必要技能
+                                            keep = False
+                                            for essential in essential_skill_names:
+                                                if essential in skill_name.lower():
+                                                    keep = True
+                                                    break
+
+                                            if keep:
+                                                forced_skills.append(skill)
+                                            else:
+                                                removed_skills.append(skill_name)
+
+                                        # 更新agent_context
+                                        start_conversation_request.agent.agent_context.skills = forced_skills
+
+                                        _logger.warning(f"[{request_id}] 🚨 FORCED SKILL FILTERING:")
+                                        _logger.warning(f"[{request_id}]   - Original skills: {original_count}")
+                                        _logger.warning(f"[{request_id}]   - Removed skills: {len(removed_skills)}")
+                                        _logger.warning(f"[{request_id}]   - Kept skills: {len(forced_skills)}")
+
+                                        if removed_skills:
+                                            _logger.debug(f"[{request_id}]   - Removed skill names: {removed_skills[:10]}...")
+
+                                        # 重新生成请求体
+                                        body_json = start_conversation_request.model_dump(
+                                            mode='json', context={'expose_secrets': True}
+                                        )
+                                        new_size = len(str(body_json))
+                                        _logger.info(f"[{request_id}]   New request body size: {new_size} chars")
+
+                    except Exception as filter_error:
+                        _logger.error(f"[{request_id}] Error during forced filtering: {filter_error}", exc_info=True)
+                # ===== 结束强制精简 =====
+
+            except Exception as e:
+                _logger.error(f"[{request_id}] ❌ Failed to dump request model: {str(e)}", exc_info=True)
+                raise RuntimeError(f"Failed to prepare request: {str(e)}") from e
+
+            # 发送请求 - 使用增加的超时时间
+            try:
+                # 临时增加超时时间到300秒
+                original_timeout = self.sandbox_startup_timeout
+                current_timeout = 300  # 增加到300秒
+
+                _logger.info(f"[{request_id}]   Using timeout: {current_timeout}s (increased from {original_timeout}s)")
+
+                response = await self.httpx_client.post(
+                    f'{agent_server_url}/api/conversations',
+                    json=body_json,
+                    headers={
+                        'X-Session-API-Key': sandbox.session_api_key,
+                        'X-Request-ID': request_id,
+                        'Content-Type': 'application/json'
+                    },
+                    timeout=current_timeout,
                 )
 
-            # Set security analyzer from settings
-            user = await self.user_context.get_user_info()
-            await self._set_security_analyzer_from_settings(
-                agent_server_url,
-                sandbox.session_api_key,
-                info.id,
-                user.security_analyzer,
-                self.httpx_client,
-            )
+                http_time = time.time() - step_times[step_name]
+                _logger.info(f"[{request_id}] ✅ HTTP request completed (took {http_time:.3f}s)")
+                _logger.info(f"[{request_id}]   Response status: {response.status_code}")
+                _logger.info(f"[{request_id}]   Response headers: {dict(response.headers)}")
 
-            # Update the start task
+                # 检查响应状态
+                if response.status_code >= 400:
+                    error_body = response.text[:500]
+                    _logger.error(f"[{request_id}] ❌ HTTP error response: {response.status_code}")
+                    _logger.error(f"[{request_id}]   Response body: {error_body}")
+                    response.raise_for_status()
+
+                # 解析响应
+                try:
+                    response_data = response.json()
+                    info = ConversationInfo.model_validate(response_data)
+                    _logger.info(f"[{request_id}] ✅ Response parsed successfully")
+                    _logger.info(f"[{request_id}]   Conversation ID: {info.id}")
+
+                except Exception as e:
+                    _logger.error(f"[{request_id}] ❌ Failed to parse response: {str(e)}", exc_info=True)
+                    _logger.error(f"[{request_id}]   Raw response: {response.text[:500]}")
+                    raise ValueError(f"Invalid response from agent server: {str(e)}") from e
+
+            except httpx.TimeoutException as e:
+                _logger.error(f"[{request_id}] ❌ HTTP request timed out after {current_timeout}s")
+                _logger.error(f"[{request_id}]   URL: {agent_server_url}/api/conversations")
+                _logger.error(f"[{request_id}]   Request size: {len(str(body_json))} chars")
+                raise TimeoutError(f"Agent server timeout after {current_timeout}s") from e
+
+            except httpx.HTTPStatusError as e:
+                _logger.error(f"[{request_id}] ❌ HTTP status error: {e.response.status_code}")
+                _logger.error(f"[{request_id}]   Response: {e.response.text[:500]}")
+                raise
+
+            except Exception as e:
+                _logger.error(f"[{request_id}] ❌ HTTP request failed: {str(e)}", exc_info=True)
+                raise
+
+            # ========== 保存对话信息到数据库 ==========
+            step_name = "save_conversation"
+            step_times[step_name] = time.time()
+            _logger.info(f"[{request_id}] Saving conversation info to database...")
+
+            try:
+                # 再次获取用户ID（确保最新）
+                user_id = await self.user_context.get_user_id()
+
+                app_conversation_info = AppConversationInfo(
+                    id=info.id,
+                    title=f'Conversation {info.id.hex[:5]}',
+                    sandbox_id=sandbox.id,
+                    created_by_user_id=user_id,
+                    llm_model=start_conversation_request.agent.llm.model if hasattr(start_conversation_request, 'agent') else request.llm_model,
+                    selected_repository=request.selected_repository,
+                    selected_branch=request.selected_branch,
+                    git_provider=request.git_provider,
+                    trigger=request.trigger,
+                    pr_number=request.pr_number,
+                    parent_conversation_id=request.parent_conversation_id,
+                )
+
+                await self.app_conversation_info_service.save_app_conversation_info(
+                    app_conversation_info
+                )
+
+                _logger.info(f"[{request_id}] ✅ Conversation info saved (took {time.time() - step_times[step_name]:.3f}s)")
+                _logger.info(f"[{request_id}]   Conversation title: {app_conversation_info.title}")
+
+            except Exception as e:
+                _logger.error(f"[{request_id}] ❌ Failed to save conversation info: {str(e)}", exc_info=True)
+                # 不抛出异常，继续执行，但记录错误
+
+            # ========== 设置默认处理器 ==========
+            step_name = "setup_processors"
+            step_times[step_name] = time.time()
+            _logger.info(f"[{request_id}] Setting up event processors...")
+
+            try:
+                processors = request.processors or []
+                _logger.info(f"[{request_id}]   Initial processors count: {len(processors)}")
+
+                # 确保包含SetTitleCallbackProcessor
+                has_set_title_processor = any(
+                    isinstance(processor, SetTitleCallbackProcessor)
+                    for processor in processors
+                )
+
+                if not has_set_title_processor:
+                    processors.append(SetTitleCallbackProcessor())
+                    _logger.info(f"[{request_id}]   Added SetTitleCallbackProcessor")
+
+                # 保存每个processor
+                for i, processor in enumerate(processors):
+                    await self.event_callback_service.save_event_callback(
+                        EventCallback(
+                            conversation_id=info.id,
+                            processor=processor,
+                        )
+                    )
+                    _logger.info(f"[{request_id}]   Saved processor {i+1}/{len(processors)}: {type(processor).__name__}")
+
+                _logger.info(f"[{request_id}] ✅ Processors saved (took {time.time() - step_times[step_name]:.3f}s)")
+
+            except Exception as e:
+                _logger.error(f"[{request_id}] ❌ Failed to save processors: {str(e)}", exc_info=True)
+                # 不抛出异常，继续执行
+
+            # ========== 设置安全分析器 ==========
+            step_name = "security_analyzer"
+            step_times[step_name] = time.time()
+            _logger.info(f"[{request_id}] Setting up security analyzer...")
+
+            try:
+                user = await self.user_context.get_user_info()
+                _logger.info(f"[{request_id}]   User security analyzer: {user.security_analyzer if hasattr(user, 'security_analyzer') else 'default'}")
+
+                await self._set_security_analyzer_from_settings(
+                    agent_server_url,
+                    sandbox.session_api_key,
+                    info.id,
+                    user.security_analyzer if hasattr(user, 'security_analyzer') else None,
+                    self.httpx_client,
+                )
+
+                _logger.info(f"[{request_id}] ✅ Security analyzer configured (took {time.time() - step_times[step_name]:.3f}s)")
+
+            except Exception as e:
+                _logger.error(f"[{request_id}] ❌ Failed to set security analyzer: {str(e)}", exc_info=True)
+                # 不抛出异常，继续执行
+
+            # ========== 最终状态：成功 ==========
+            total_time = time.time() - start_time
+            _logger.info(f"[{request_id}] ========== CONVERSATION STARTED SUCCESSFULLY ==========")
+            _logger.info(f"[{request_id}] Total time: {total_time:.3f}s")
+            _logger.info(f"[{request_id}] Conversation ID: {info.id}")
+            _logger.info(f"[{request_id}] Agent server URL: {agent_server_url}")
+
             task.status = AppConversationStartTaskStatus.READY
             task.app_conversation_id = info.id
+
+            _logger.info(f"[{request_id}] 📤 YIELDING: FINAL READY status")
             yield task
 
         except Exception as exc:
-            _logger.exception('Error starting conversation', stack_info=True)
-            task.status = AppConversationStartTaskStatus.ERROR
-            task.detail = str(exc)
+            total_time = time.time() - start_time
+            _logger.error(f"[{request_id}] ========== ERROR STARTING CONVERSATION ==========")
+            _logger.error(f"[{request_id}] Error type: {type(exc).__name__}")
+            _logger.error(f"[{request_id}] Error message: {str(exc)}")
+            _logger.error(f"[{request_id}] Total time before error: {total_time:.3f}s")
+            _logger.exception(f"[{request_id}] Full stack trace:", exc_info=True)
+
+            # 记录关键变量的状态
+            _logger.error(f"[{request_id}] Variable states at error:")
+            _logger.error(f"[{request_id}]   - task exists: {task is not None}")
+            if task:
+                _logger.error(f"[{request_id}]   - task.status: {getattr(task, 'status', 'N/A')}")
+                _logger.error(f"[{request_id}]   - task.sandbox_id: {getattr(task, 'sandbox_id', 'N/A')}")
+
+            _logger.error(f"[{request_id}]   - sandbox exists: {sandbox is not None}")
+            if sandbox:
+                _logger.error(f"[{request_id}]   - sandbox.id: {getattr(sandbox, 'id', 'N/A')}")
+
+            _logger.error(f"[{request_id}]   - agent_server_url: {agent_server_url}")
+
+            # 记录请求信息
+            _logger.error(f"[{request_id}] Request that caused error:")
+            _logger.error(f"[{request_id}]   - parent_conversation_id: {request.parent_conversation_id}")
+            _logger.error(f"[{request_id}]   - agent_type: {request.agent_type}")
+            _logger.error(f"[{request_id}]   - llm_model: {request.llm_model}")
+
+            # 更新task为错误状态
+            if task:
+                task.status = AppConversationStartTaskStatus.ERROR
+                task.detail = f"{type(exc).__name__}: {str(exc)}"
+            else:
+                # 如果没有task，创建一个新的错误task
+                task = AppConversationStartTask(
+                    created_by_user_id="unknown",
+                    request=request,
+                    status=AppConversationStartTaskStatus.ERROR,
+                    detail=f"{type(exc).__name__}: {str(exc)}"
+                )
+
+            _logger.info(f"[{request_id}] 📤 YIELDING: ERROR status")
             yield task
+
+        finally:
+            _logger.info(f"[{request_id}] ========== {function_name} FINISHED ==========")
+            _logger.info(f"[{request_id}] Total time: {time.time() - start_time:.3f}s")
+
 
     async def _build_app_conversations(
         self, app_conversation_infos: Sequence[AppConversationInfo | None]
@@ -631,11 +1747,21 @@ class LiveStatusAppConversationService(AppConversationServiceBase):
         """
         model = llm_model or user.llm_model
         base_url = user.llm_base_url
-        if model and model.startswith('openhands/'):
+        # For ollama models, ensure base_url is set to user's Ollama endpoint
+        if model and model.startswith('ollama/'):
+            # Ollama requires the base_url to be set for local inference
+            if not base_url:
+                base_url = 'http://localhost:11434'
+        elif model and model.startswith('openhands/'):
             base_url = user.llm_base_url or self.openhands_provider_base_url
 
+        # For Ollama, we may need to strip the 'ollama/' prefix for the model name
+        actual_model = model
+        if model and model.startswith('ollama/'):
+            actual_model = model.replace('ollama/', '')
+
         return LLM(
-            model=model,
+            model=actual_model,
             base_url=base_url,
             api_key=user.llm_api_key,
             usage_id='agent',
@@ -1030,6 +2156,90 @@ class LiveStatusAppConversationService(AppConversationServiceBase):
             run=initial_message.run,
         )
 
+    # async def _finalize_conversation_request(
+    #     self,
+    #     agent: Agent,
+    #     conversation_id: UUID | None,
+    #     user: UserInfo,
+    #     workspace: LocalWorkspace,
+    #     initial_message: SendMessageRequest | None,
+    #     secrets: dict[str, SecretValue],
+    #     sandbox: SandboxInfo,
+    #     remote_workspace: AsyncRemoteWorkspace | None,
+    #     selected_repository: str | None,
+    #     working_dir: str,
+    #     plugins: list[PluginSpec] | None = None,
+    # ) -> StartConversationRequest:
+    #     """Finalize the conversation request with experiment variants and skills.
+
+    #     Args:
+    #         agent: The configured agent
+    #         conversation_id: Optional conversation ID, generates new one if None
+    #         user: User information
+    #         workspace: Local workspace instance
+    #         initial_message: Optional initial message for the conversation
+    #         secrets: Dictionary of secrets for authentication
+    #         sandbox: Sandbox information
+    #         remote_workspace: Optional remote workspace for skills loading
+    #         selected_repository: Optional repository name
+    #         working_dir: Working directory path
+    #         plugins: Optional list of plugin specifications to load
+
+    #     Returns:
+    #         Complete StartConversationRequest ready for use
+    #     """
+    #     # Generate conversation ID if not provided
+    #     conversation_id = conversation_id or uuid4()
+
+    #     # Apply experiment variants
+    #     agent = ExperimentManagerImpl.run_agent_variant_tests__v1(
+    #         user.id, conversation_id, agent
+    #     )
+
+    #     # Update agent's LLM with litellm_extra_body metadata for tracing
+    #     # This is done after experiment variants to ensure the final LLM config is used
+    #     agent = self._update_agent_with_llm_metadata(agent, conversation_id, user.id)
+
+    #     # Load and merge skills if remote workspace is available
+    #     if remote_workspace:
+    #         try:
+    #             agent = await self._load_skills_and_update_agent(
+    #                 sandbox, agent, remote_workspace, selected_repository, working_dir
+    #             )
+    #         except Exception as e:
+    #             _logger.warning(f'Failed to load skills: {e}', exc_info=True)
+    #             # Continue without skills - don't fail conversation startup
+
+    #     # Incorporate plugin parameters into initial message if specified
+    #     final_initial_message = self._construct_initial_message_with_plugin_params(
+    #         initial_message, plugins
+    #     )
+
+    #     # Convert PluginSpec list to SDK PluginSource list for agent server
+    #     sdk_plugins: list[PluginSource] | None = None
+    #     if plugins:
+    #         sdk_plugins = [
+    #             PluginSource(
+    #                 source=p.source,
+    #                 ref=p.ref,
+    #                 repo_path=p.repo_path,
+    #             )
+    #             for p in plugins
+    #         ]
+
+    #     # Create and return the final request
+    #     return StartConversationRequest(
+    #         conversation_id=conversation_id,
+    #         agent=agent,
+    #         workspace=workspace,
+    #         confirmation_policy=self._select_confirmation_policy(
+    #             bool(user.confirmation_mode), user.security_analyzer
+    #         ),
+    #         initial_message=final_initial_message,
+    #         secrets=secrets,
+    #         plugins=sdk_plugins,
+    #     )
+
     async def _finalize_conversation_request(
         self,
         agent: Agent,
@@ -1077,9 +2287,75 @@ class LiveStatusAppConversationService(AppConversationServiceBase):
         # Load and merge skills if remote workspace is available
         if remote_workspace:
             try:
+                _logger.info(f"[{getattr(self, '_current_request_id', 'unknown')}] Loading skills from remote workspace...")
                 agent = await self._load_skills_and_update_agent(
                     sandbox, agent, remote_workspace, selected_repository, working_dir
                 )
+
+                # ===== 技能过滤和诊断 =====
+                if agent and agent.agent_context and agent.agent_context.skills:
+                    request_id = getattr(self, '_current_request_id', 'unknown')
+                    original_skills = agent.agent_context.skills
+
+                    # 详细的技能统计
+                    _logger.info(f"[{request_id}] 🔍 SKILL DIAGNOSTICS:")
+                    _logger.info(f"[{request_id}]   - Skills object type: {type(original_skills)}")
+                    _logger.info(f"[{request_id}]   - Skills count: {len(original_skills)}")
+
+                    # 计算每个技能的大小
+                    skill_sizes = []
+                    for i, skill in enumerate(original_skills):
+                        skill_name = skill.name if hasattr(skill, 'name') else f"skill_{i}"
+                        content = skill.content if hasattr(skill, 'content') else ""
+                        content_size = len(content) if content else 0
+                        skill_sizes.append((skill_name, content_size))
+
+                    # 按大小排序
+                    skill_sizes.sort(key=lambda x: x[1], reverse=True)
+
+                    # 记录最大的5个技能
+                    _logger.info(f"[{request_id}] 📊 Top 5 largest skills:")
+                    for name, size in skill_sizes[:5]:
+                        _logger.info(f"[{request_id}]   - {name}: {size} chars")
+
+                    # 计算总大小
+                    total_size = sum(size for _, size in skill_sizes)
+                    _logger.info(f"[{request_id}] 📦 Total skills size: {total_size} chars")
+
+                    # 按类型分类
+                    theme_skills = [name for name, _ in skill_sizes if 'theme' in name.lower()]
+                    reference_skills = [name for name, _ in skill_sizes if 'reference' in name.lower()]
+
+                    _logger.info(f"[{request_id}]   - Theme skills: {len(theme_skills)}")
+                    _logger.info(f"[{request_id}]   - Reference skills: {len(reference_skills)}")
+
+                    # 应用技能过滤
+                    try:
+                        from openhands.app_server.app_conversation.skill_filter import SkillFilter
+                        filtered_skills = SkillFilter.filter_skills(original_skills, request_id=request_id)
+
+                        # 计算过滤后的大小
+                        filtered_size = 0
+                        for skill in filtered_skills:
+                            if hasattr(skill, 'content') and skill.content:
+                                filtered_size += len(skill.content)
+
+                        reduction = ((total_size - filtered_size) / total_size * 100) if total_size > 0 else 0
+
+                        _logger.info(f"[{request_id}] ✅ Skills filtered: {len(original_skills)} → {len(filtered_skills)}")
+                        _logger.info(f"[{request_id}] 📦 Request size: {total_size} → {filtered_size} chars ({reduction:.1f}% reduction)")
+
+                        # 更新agent的skills
+                        agent.agent_context.skills = filtered_skills
+
+                    except Exception as filter_error:
+                        _logger.error(f"[{request_id}] ❌ Error during skill filtering: {filter_error}", exc_info=True)
+                        # 如果过滤失败，保留原始skills
+
+                else:
+                    _logger.warning(f"[{getattr(self, '_current_request_id', 'unknown')}] No skills found in agent context")
+                # ===== 结束技能过滤和诊断 =====
+
             except Exception as e:
                 _logger.warning(f'Failed to load skills: {e}', exc_info=True)
                 # Continue without skills - don't fail conversation startup

@@ -21,6 +21,7 @@ from openhands.integrations.provider import ProviderType
 from openhands.integrations.service_types import AuthenticationError
 from openhands.sdk.context.skills import Skill
 from openhands.sdk.context.skills.trigger import KeywordTrigger, TaskTrigger
+import time  # 添加这行
 
 _logger = logging.getLogger(__name__)
 
@@ -277,6 +278,102 @@ def build_sandbox_config(sandbox: SandboxInfo) -> SandboxConfig | None:
     return SandboxConfig(exposed_urls=exposed_urls)
 
 
+# async def load_skills_from_agent_server(
+#     agent_server_url: str,
+#     session_api_key: str | None,
+#     project_dir: str,
+#     org_config: OrgConfig | None = None,
+#     sandbox_config: SandboxConfig | None = None,
+#     load_public: bool = True,
+#     load_user: bool = True,
+#     load_project: bool = True,
+#     load_org: bool = True,
+# ) -> list[Skill]:
+#     """Load all skills from the agent-server.
+
+#     This function makes a single API call to the agent-server's /api/skills
+#     endpoint to load and merge skills from all configured sources.
+
+#     Args:
+#         agent_server_url: URL of the agent server (e.g., 'http://localhost:8000')
+#         session_api_key: Session API key for authentication (optional)
+#         project_dir: Workspace directory path for project skills
+#         org_config: Organization skills configuration (optional)
+#         sandbox_config: Sandbox skills configuration (optional)
+#         load_public: Whether to load public skills (default: True)
+#         load_user: Whether to load user skills (default: True)
+#         load_project: Whether to load project skills (default: True)
+#         load_org: Whether to load organization skills (default: True)
+
+#     Returns:
+#         List of Skill objects merged from all sources.
+#         Returns empty list on error.
+#     """
+#     try:
+#         # Build request payload
+#         payload = {
+#             'load_public': load_public,
+#             'load_user': load_user,
+#             'load_project': load_project,
+#             'load_org': load_org,
+#             'project_dir': project_dir,
+#             'org_config': org_config.model_dump() if org_config else None,
+#             'sandbox_config': sandbox_config.model_dump() if sandbox_config else None,
+#         }
+
+#         # Build headers
+#         headers = {'Content-Type': 'application/json'}
+#         if session_api_key:
+#             headers['X-Session-API-Key'] = session_api_key
+
+#         # Make API request
+#         async with httpx.AsyncClient() as client:
+#             response = await client.post(
+#                 f'{agent_server_url}/api/skills',
+#                 json=payload,
+#                 headers=headers,
+#                 timeout=60.0,
+#             )
+#             response.raise_for_status()
+
+#             data = response.json()
+
+#         # Convert response to Skill objects
+#         skills: list[Skill] = []
+#         for skill_data_dict in data.get('skills', []):
+#             try:
+#                 skill_info = SkillInfo.model_validate(skill_data_dict)
+#                 skill = _convert_skill_info_to_skill(skill_info)
+#                 skills.append(skill)
+#             except Exception as e:
+#                 skill_name = (
+#                     skill_data_dict.get('name', 'unknown')
+#                     if isinstance(skill_data_dict, dict)
+#                     else 'unknown'
+#                 )
+#                 _logger.warning(f'Failed to convert skill {skill_name}: {e}')
+
+#         sources = data.get('sources', {})
+#         _logger.info(
+#             f'Loaded {len(skills)} skills from agent-server: '
+#             f'sources={sources}, names={[s.name for s in skills]}'
+#         )
+
+#         return skills
+
+#     except httpx.HTTPStatusError as e:
+#         _logger.warning(
+#             f'Agent-server returned error status {e.response.status_code}: '
+#             f'{e.response.text}'
+#         )
+#         return []
+#     except httpx.RequestError as e:
+#         _logger.warning(f'Failed to connect to agent-server: {e}')
+#         return []
+#     except Exception as e:
+#         _logger.warning(f'Failed to load skills from agent-server: {e}')
+#         return []
+
 async def load_skills_from_agent_server(
     agent_server_url: str,
     session_api_key: str | None,
@@ -288,26 +385,18 @@ async def load_skills_from_agent_server(
     load_project: bool = True,
     load_org: bool = True,
 ) -> list[Skill]:
-    """Load all skills from the agent-server.
+    """Load all skills from the agent-server."""
 
-    This function makes a single API call to the agent-server's /api/skills
-    endpoint to load and merge skills from all configured sources.
+    # 添加请求ID（如果可用）
+    request_id = getattr(_logger, 'request_id', 'unknown')
 
-    Args:
-        agent_server_url: URL of the agent server (e.g., 'http://localhost:8000')
-        session_api_key: Session API key for authentication (optional)
-        project_dir: Workspace directory path for project skills
-        org_config: Organization skills configuration (optional)
-        sandbox_config: Sandbox skills configuration (optional)
-        load_public: Whether to load public skills (default: True)
-        load_user: Whether to load user skills (default: True)
-        load_project: Whether to load project skills (default: True)
-        load_org: Whether to load organization skills (default: True)
+    _logger.info(f"[{request_id}] 🔍 ===== SKILL LOADING DETAILS =====")
+    _logger.info(f"[{request_id}] Loading skills from: {agent_server_url}")
+    _logger.info(f"[{request_id}] Project dir: {project_dir}")
+    _logger.info(f"[{request_id}] Load flags: public={load_public}, user={load_user}, project={load_project}, org={load_org}")
 
-    Returns:
-        List of Skill objects merged from all sources.
-        Returns empty list on error.
-    """
+    start_time = time.time()
+
     try:
         # Build request payload
         payload = {
@@ -320,12 +409,17 @@ async def load_skills_from_agent_server(
             'sandbox_config': sandbox_config.model_dump() if sandbox_config else None,
         }
 
+        _logger.info(f"[{request_id}] Request payload size: {len(str(payload))} chars")
+
         # Build headers
         headers = {'Content-Type': 'application/json'}
         if session_api_key:
             headers['X-Session-API-Key'] = session_api_key
 
         # Make API request
+        _logger.info(f"[{request_id}] Sending request to {agent_server_url}/api/skills...")
+        api_start = time.time()
+
         async with httpx.AsyncClient() as client:
             response = await client.post(
                 f'{agent_server_url}/api/skills',
@@ -335,44 +429,101 @@ async def load_skills_from_agent_server(
             )
             response.raise_for_status()
 
+            api_time = time.time() - api_start
+            _logger.info(f"[{request_id}] ✅ API response received in {api_time:.2f}s")
+            _logger.info(f"[{request_id}] Response status: {response.status_code}")
+
             data = response.json()
+            response_size = len(str(data))
+            _logger.info(f"[{request_id}] Response size: {response_size} chars")
 
         # Convert response to Skill objects
+        skills_data = data.get('skills', [])
+        sources = data.get('sources', {})
+
+        _logger.info(f"[{request_id}] Raw skills count: {len(skills_data)}")
+        _logger.info(f"[{request_id}] Sources: {sources}")
+
+        # 分析每个技能
         skills: list[Skill] = []
-        for skill_data_dict in data.get('skills', []):
+        conversion_start = time.time()
+
+        for i, skill_data_dict in enumerate(skills_data):
+            skill_name = skill_data_dict.get('name', f'unknown_{i}') if isinstance(skill_data_dict, dict) else f'unknown_{i}'
+            skill_start = time.time()
+
             try:
                 skill_info = SkillInfo.model_validate(skill_data_dict)
+
+                # 记录技能详情
+                content_length = len(skill_info.content) if skill_info.content else 0
+                trigger_count = len(skill_info.triggers) if skill_info.triggers else 0
+
+                _logger.info(f"[{request_id}]   Processing skill {i+1}/{len(skills_data)}: {skill_name}")
+                _logger.info(f"[{request_id}]     - Content length: {content_length} chars")
+                _logger.info(f"[{request_id}]     - Triggers: {trigger_count}")
+                _logger.info(f"[{request_id}]     - Source: {skill_info.source}")
+
+                # 特别关注大型技能
+                if content_length > 10000:
+                    _logger.warning(f"[{request_id}]     ⚠️ Large skill detected: {content_length} chars")
+
+                # 特别关注 flarglebargle
+                if 'flarglebargle' in skill_name.lower():
+                    _logger.warning(f"[{request_id}]     ⚠️ Found test/placeholder skill: {skill_name}")
+                    _logger.warning(f"[{request_id}]     Content preview: {skill_info.content[:200]}...")
+
                 skill = _convert_skill_info_to_skill(skill_info)
                 skills.append(skill)
-            except Exception as e:
-                skill_name = (
-                    skill_data_dict.get('name', 'unknown')
-                    if isinstance(skill_data_dict, dict)
-                    else 'unknown'
-                )
-                _logger.warning(f'Failed to convert skill {skill_name}: {e}')
 
-        sources = data.get('sources', {})
-        _logger.info(
-            f'Loaded {len(skills)} skills from agent-server: '
-            f'sources={sources}, names={[s.name for s in skills]}'
-        )
+                process_time = time.time() - skill_start
+                if process_time > 0.5:  # 记录处理时间超过0.5秒的技能
+                    _logger.warning(f"[{request_id}]     ⚠️ Slow skill processing: {process_time:.2f}s")
+
+            except Exception as e:
+                _logger.error(f"[{request_id}] ❌ Failed to convert skill {skill_name}: {e}", exc_info=True)
+
+        conversion_time = time.time() - conversion_start
+        total_time = time.time() - start_time
+
+        # 技能统计
+        _logger.info(f"[{request_id}] ===== SKILL LOADING SUMMARY =====")
+        _logger.info(f"[{request_id}] Total skills: {len(skills)}")
+        _logger.info(f"[{request_id}] API time: {api_time:.2f}s")
+        _logger.info(f"[{request_id}] Conversion time: {conversion_time:.2f}s")
+        _logger.info(f"[{request_id}] Total time: {total_time:.2f}s")
+
+        # 按类型统计
+        regular_count = sum(1 for s in skills if s.trigger is None)
+        keyword_count = sum(1 for s in skills if isinstance(s.trigger, KeywordTrigger))
+        task_count = sum(1 for s in skills if isinstance(s.trigger, TaskTrigger))
+
+        _logger.info(f"[{request_id}] Skills by trigger type:")
+        _logger.info(f"[{request_id}]   - No trigger: {regular_count}")
+        _logger.info(f"[{request_id}]   - Keyword trigger: {keyword_count}")
+        _logger.info(f"[{request_id}]   - Task trigger: {task_count}")
+
+        # 找出最大的5个技能
+        skill_sizes = [(s.name, len(s.content)) for s in skills]
+        largest = sorted(skill_sizes, key=lambda x: x[1], reverse=True)[:5]
+        _logger.info(f"[{request_id}] Top 5 largest skills:")
+        for name, size in largest:
+            _logger.info(f"[{request_id}]   - {name}: {size} chars")
+
+        # 记录所有技能名称
+        _logger.info(f"[{request_id}] Skill names: {[s.name for s in skills]}")
 
         return skills
 
     except httpx.HTTPStatusError as e:
-        _logger.warning(
-            f'Agent-server returned error status {e.response.status_code}: '
-            f'{e.response.text}'
-        )
+        _logger.error(f"[{request_id}] ❌ Agent-server HTTP error {e.response.status_code}: {e.response.text}")
         return []
     except httpx.RequestError as e:
-        _logger.warning(f'Failed to connect to agent-server: {e}')
+        _logger.error(f"[{request_id}] ❌ Failed to connect to agent-server: {e}")
         return []
     except Exception as e:
-        _logger.warning(f'Failed to load skills from agent-server: {e}')
+        _logger.error(f"[{request_id}] ❌ Failed to load skills: {e}", exc_info=True)
         return []
-
 
 def _convert_skill_info_to_skill(skill_info: SkillInfo) -> Skill:
     """Convert skill info from API response to Skill object.
