@@ -78,7 +78,7 @@ class EventFilter:
         # Text search in event content if query provided
         if self.query:
             event_dict = event_to_dict(event)
-            event_str = json.dumps(event_dict).lower()
+            event_str = json.dumps(event_dict, ensure_ascii=False).lower()
             if self.query.lower() not in event_str:
                 return False
 

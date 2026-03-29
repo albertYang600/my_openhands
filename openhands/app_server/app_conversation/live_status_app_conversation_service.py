@@ -1755,10 +1755,13 @@ class LiveStatusAppConversationService(AppConversationServiceBase):
         elif model and model.startswith('openhands/'):
             base_url = user.llm_base_url or self.openhands_provider_base_url
 
-        # For Ollama, we may need to strip the 'ollama/' prefix for the model name
+        # For Ollama, keep the 'ollama/' prefix so LiteLLM can auto-detect the provider
         actual_model = model
         if model and model.startswith('ollama/'):
-            actual_model = model.replace('ollama/', '')
+            # Keep the prefix for LiteLLM to auto-detect provider
+            # Also ensure base_url is set
+            if not base_url:
+                base_url = 'http://localhost:11434'
 
         return LLM(
             model=actual_model,

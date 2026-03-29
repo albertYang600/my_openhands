@@ -255,7 +255,7 @@ async def call_tool_mcp(mcp_clients: list[MCPClient], action: MCPAction) -> Obse
         logger.debug(f'MCP response: {response}')
 
         return MCPObservation(
-            content=json.dumps(response.model_dump(mode='json')),
+            content=json.dumps(response.model_dump(mode='json'), ensure_ascii=False),
             name=action.name,
             arguments=action.arguments,
         )
@@ -268,7 +268,8 @@ async def call_tool_mcp(mcp_clients: list[MCPClient], action: MCPAction) -> Obse
                 'isError': True,
                 'error': f'Tool "{action.name}" timed out after {timeout_val} seconds',
                 'content': [],
-            }
+            },
+            ensure_ascii=False,
         )
         return MCPObservation(
             content=error_content,
@@ -278,7 +279,7 @@ async def call_tool_mcp(mcp_clients: list[MCPClient], action: MCPAction) -> Obse
     except McpError as e:
         # Handle MCP errors by returning an error observation instead of raising
         logger.error(f'MCP error when calling tool {action.name}: {e}')
-        error_content = json.dumps({'isError': True, 'error': str(e), 'content': []})
+        error_content = json.dumps({'isError': True, 'error': str(e), 'content': []}, ensure_ascii=False)
         return MCPObservation(
             content=error_content,
             name=action.name,
