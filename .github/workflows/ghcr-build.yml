@@ -63,7 +63,7 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.head.sha }}
       - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3.7.0
+        uses: docker/setup-qemu-action@v4.0.0
         with:
           image: tonistiigi/binfmt:latest
       - name: Login to GHCR
@@ -101,7 +101,7 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.head.sha }}
       - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3.7.0
+        uses: docker/setup-qemu-action@v4.0.0
         with:
           image: tonistiigi/binfmt:latest
       - name: Login to GHCR
